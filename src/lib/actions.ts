@@ -8,6 +8,7 @@ import {
   getMostRecentActiveAttendeeIds,
   insertGame,
   softDeleteGame,
+  deleteGameRow,
   updateGameRow,
   insertSettlement,
   deleteSettlementRow,
@@ -188,6 +189,25 @@ export async function deleteGame(id: string) {
   await softDeleteGame(id);
 
   revalidatePath("/games");
+  revalidatePath("/settlements");
+  revalidatePath("/stats");
+  revalidatePath("/");
+}
+
+/**
+ * Admin-only permanent delete — unlike deleteGame (soft delete), this cannot
+ * be undone and the row cannot be recovered via the rollback screen either.
+ * Offered as an explicit alternative to soft delete, not a replacement for
+ * it (see PRD 13).
+ */
+export async function hardDeleteGame(id: string) {
+  await requireAdmin();
+  await deleteGameRow(id);
+
+  // Same set as deleteGame, plus /games/new: deleting the most recent game
+  // can change getPreviousAttendeeIds()'s result.
+  revalidatePath("/games");
+  revalidatePath("/games/new");
   revalidatePath("/settlements");
   revalidatePath("/stats");
   revalidatePath("/");

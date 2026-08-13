@@ -2,8 +2,9 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { format } from "date-fns";
-import { deleteGame, updateGame } from "@/lib/actions";
+import { deleteGame, hardDeleteGame, updateGame } from "@/lib/actions";
 import { isActiveGame, withinDayKey } from "@/lib/games";
+import { todayInSeoul } from "@/lib/time";
 import {
   GAME_TYPE_LABELS,
   GAME_TYPES,
@@ -41,17 +42,30 @@ export default function GamesListClient({
     [participants]
   );
 
+  // Defaults the filter to today (Asia/Seoul) rather than "전체" — this
+  // screen is mainly used right after a game night, so showing today's
+  // games first matches how it's actually used. Unpadded via String(Number())
+  // to match the comparison the filter below already does against `month`/
+  // `day` ("08" would never equal "8" otherwise).
+  const today = todayInSeoul();
+  const todayYear = today.slice(0, 4);
+  const todayMonth = String(Number(today.slice(5, 7)));
+  const todayDay = String(Number(today.slice(8, 10)));
+
   const years = useMemo(() => {
     const set = new Set(games.map((g) => g.date.slice(0, 4)));
+    set.add(todayYear); // so today's year is always a valid, selected option even with no games yet
     return Array.from(set).sort((a, b) => b.localeCompare(a));
-  }, [games]);
+  }, [games, todayYear]);
 
-  const [year, setYear] = useState("all");
-  const [month, setMonth] = useState("all");
-  const [day, setDay] = useState("all");
+  const [year, setYear] = useState(todayYear);
+  const [month, setMonth] = useState(todayMonth);
+  const [day, setDay] = useState(todayDay);
   const [isPending, startTransition] = useTransition();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [confirmHardDeleteId, setConfirmHardDeleteId] = useState<string | null>(null);
+  const [isHardDeleting, startHardDeleteTransition] = useTransition();
 
   const filtered = useMemo(() => {
     return games
@@ -86,6 +100,13 @@ export default function GamesListClient({
     startTransition(async () => {
       await deleteGame(id);
       setDeletingId(null);
+    });
+  }
+
+  function handleHardDelete(id: string) {
+    startHardDeleteTransition(async () => {
+      await hardDeleteGame(id);
+      setConfirmHardDeleteId(null);
     });
   }
 
@@ -223,24 +244,59 @@ export default function GamesListClient({
                       {inactive && <InactiveBadge />}
                     </div>
                     <div className="flex items-center gap-3">
-                      {isAdmin && (
-                        <button
-                          type="button"
-                          onClick={() => setEditingId(isEditing ? null : g.id)}
-                          className="text-xs font-medium text-slate-500 hover:text-slate-900"
-                        >
-                          {isEditing ? "닫기" : "수정"}
-                        </button>
-                      )}
-                      {!inactive && (
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(g.id)}
-                          disabled={isPending && deletingId === g.id}
-                          className="text-xs text-slate-300 hover:text-red-600 disabled:opacity-50"
-                        >
-                          {isPending && deletingId === g.id ? "삭제 중..." : "삭제"}
-                        </button>
+                      {isAdmin && confirmHardDeleteId === g.id ? (
+                        <span className="flex items-center gap-2 text-xs">
+                          <span className="text-red-700 font-medium">
+                            완전 삭제할까요? 되돌릴 수 없습니다.
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleHardDelete(g.id)}
+                            disabled={isHardDeleting}
+                            className="text-red-700 font-semibold hover:underline disabled:opacity-50"
+                          >
+                            {isHardDeleting ? "삭제 중..." : "확인"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmHardDeleteId(null)}
+                            disabled={isHardDeleting}
+                            className="text-slate-400 hover:text-slate-700"
+                          >
+                            취소
+                          </button>
+                        </span>
+                      ) : (
+                        <>
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => setEditingId(isEditing ? null : g.id)}
+                              className="text-xs font-medium text-slate-500 hover:text-slate-900"
+                            >
+                              {isEditing ? "닫기" : "수정"}
+                            </button>
+                          )}
+                          {!inactive && (
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(g.id)}
+                              disabled={isPending && deletingId === g.id}
+                              className="text-xs text-slate-300 hover:text-red-600 disabled:opacity-50"
+                            >
+                              {isPending && deletingId === g.id ? "삭제 중..." : "삭제"}
+                            </button>
+                          )}
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmHardDeleteId(g.id)}
+                              className="text-xs text-slate-300 hover:text-red-700"
+                            >
+                              완전삭제
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>

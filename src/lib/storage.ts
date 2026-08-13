@@ -266,6 +266,12 @@ export async function updateGameRow(
   return mapGame(unwrap({ data, error }));
 }
 
+/** Hard delete: permanently removes the row (unlike softDeleteGame, this cannot be undone). Admin-only, see actions.ts hardDeleteGame. */
+export async function deleteGameRow(id: string): Promise<void> {
+  const { error } = await getSupabase().from("games").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
 // ---------- Settlements ----------
 
 export async function listSettlements(): Promise<Settlement[]> {

@@ -30,6 +30,8 @@ import {
   GameTypeFilter,
   PeriodGrouping,
   RangePreset,
+  RecordTier,
+  RecordTierEntry,
 } from "@/lib/stats";
 
 interface ParticipantLite {
@@ -44,6 +46,7 @@ const RANGE_OPTIONS: { value: RangePreset; label: string }[] = [
   { value: "90d", label: "최근 90일" },
   { value: "year", label: "올해" },
   { value: "all", label: "전체" },
+  { value: "custom", label: "직접 입력" },
 ];
 
 const GROUPING_OPTIONS: { value: PeriodGrouping; label: string }[] = [
@@ -94,15 +97,27 @@ export default function StatsClient({
   initialH2hParticipantId?: string | null;
 }) {
   const [range, setRange] = useState<RangePreset>("30d");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
   const [grouping, setGrouping] = useState<PeriodGrouping>("week");
   const [gameType, setGameType] = useState<GameTypeFilter>("all");
   const [h2hParticipantId, setH2hParticipantId] = useState<string | null>(
     initialH2hParticipantId
   );
 
+  // Only consulted when range === "custom"; harmless to always pass.
+  const customRange = useMemo(
+    () => ({ start: customStart || undefined, end: customEnd || undefined }),
+    [customStart, customEnd]
+  );
+
   const filteredGames = useMemo(
-    () => filterGamesByType(filterGamesByPreset(activeGames(games), range), gameType),
-    [games, range, gameType]
+    () =>
+      filterGamesByType(
+        filterGamesByPreset(activeGames(games), range, customRange),
+        gameType
+      ),
+    [games, range, customRange, gameType]
   );
 
   const stats = useMemo(
@@ -192,8 +207,8 @@ export default function StatsClient({
   // comparison is meaningless once already narrowed to one type) but still
   // respects the 기간 filter — see the note rendered under its heading.
   const periodOnlyGames = useMemo(
-    () => filterGamesByPreset(activeGames(games), range),
-    [games, range]
+    () => filterGamesByPreset(activeGames(games), range, customRange),
+    [games, range, customRange]
   );
   const gameTypeStats = useMemo(
     () => computeGameTypeStats(participants, periodOnlyGames),
@@ -212,7 +227,7 @@ export default function StatsClient({
       <div className="flex flex-wrap gap-4 bg-white rounded-2xl border border-slate-200 p-4">
         <div>
           <span className="text-xs text-slate-400 block mb-1">기간</span>
-          <div className="flex gap-1">
+          <div className="flex gap-1 flex-wrap">
             {RANGE_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
@@ -227,6 +242,23 @@ export default function StatsClient({
               </button>
             ))}
           </div>
+          {range === "custom" && (
+            <div className="flex items-center gap-2 mt-2">
+              <input
+                type="date"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
+              />
+              <span className="text-xs text-slate-400">~</span>
+              <input
+                type="date"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
+              />
+            </div>
+          )}
         </div>
         <div>
           <span className="text-xs text-slate-400 block mb-1">추이 단위</span>
@@ -284,8 +316,10 @@ export default function StatsClient({
                   <th className="py-2 pr-4">티어</th>
                   <th className="py-2 pr-4">참여</th>
                   <th className="py-2 pr-4">승</th>
+                  <th className="py-2 pr-4">무</th>
                   <th className="py-2 pr-4">패</th>
-                  <th className="py-2 pr-4">승률</th>
+                  <th className="py-2 pr-4">승률A</th>
+                  <th className="py-2 pr-4">승률B</th>
                   <th className="py-2 pr-4">순점수</th>
                   <th className="py-2 pr-4" />
                 </tr>
@@ -307,9 +341,15 @@ export default function StatsClient({
                       </td>
                       <td className="py-2 pr-4 text-slate-500">{s.appearances}</td>
                       <td className="py-2 pr-4 text-emerald-600">{s.wins}</td>
+                      <td className="py-2 pr-4 text-slate-400">
+                        {s.appearances - s.wins - s.losses}
+                      </td>
                       <td className="py-2 pr-4 text-red-500">{s.losses}</td>
                       <td className="py-2 pr-4 text-slate-500">
                         {(s.winRate * 100).toFixed(0)}%
+                      </td>
+                      <td className="py-2 pr-4 text-slate-500">
+                        {(s.winRateB * 100).toFixed(0)}%
                       </td>
                       <td
                         className={`py-2 pr-4 font-semibold ${
@@ -476,9 +516,12 @@ export default function StatsClient({
                 <tr className="text-left text-slate-400 text-xs">
                   <th className="py-2 pr-4">종목</th>
                   <th className="py-2 pr-4">이름</th>
+                  <th className="py-2 pr-4">참여</th>
                   <th className="py-2 pr-4">승</th>
+                  <th className="py-2 pr-4">무</th>
                   <th className="py-2 pr-4">패</th>
-                  <th className="py-2 pr-4">승률</th>
+                  <th className="py-2 pr-4">승률A</th>
+                  <th className="py-2 pr-4">승률B</th>
                   <th className="py-2 pr-4">순점수</th>
                 </tr>
               </thead>
@@ -486,25 +529,24 @@ export default function StatsClient({
                 {GAME_TYPES.flatMap((gt) => {
                   const rows = gameTypeStats
                     .filter((s) => s.gameType === gt)
-                    .sort((a, b) => b.netPoints - a.netPoints);
-                  const best = rows[0];
+                    .sort((a, b) => b.winRate - a.winRate || b.winRateB - a.winRateB);
                   return rows.map((s, i) => (
                     <tr key={`${gt}-${s.id}`} className="border-t border-slate-100">
                       <td className="py-2 pr-4 text-slate-500">
                         {i === 0 ? GAME_TYPE_LABELS[gt] : ""}
                       </td>
-                      <td className="py-2 pr-4 font-medium">
-                        {s.name}
-                        {best && s.id === best.id && (
-                          <span className="ml-1.5 text-xs text-amber-600 font-semibold">
-                            최강
-                          </span>
-                        )}
-                      </td>
+                      <td className="py-2 pr-4 font-medium">{s.name}</td>
+                      <td className="py-2 pr-4 text-slate-500">{s.appearances}</td>
                       <td className="py-2 pr-4 text-emerald-600">{s.wins}</td>
+                      <td className="py-2 pr-4 text-slate-400">
+                        {s.appearances - s.wins - s.losses}
+                      </td>
                       <td className="py-2 pr-4 text-red-500">{s.losses}</td>
                       <td className="py-2 pr-4 text-slate-500">
                         {(s.winRate * 100).toFixed(0)}%
+                      </td>
+                      <td className="py-2 pr-4 text-slate-500">
+                        {(s.winRateB * 100).toFixed(0)}%
                       </td>
                       <td
                         className={`py-2 pr-4 font-semibold ${
@@ -602,45 +644,17 @@ export default function StatsClient({
           위 기간·종목 필터와 무관하게 항상 통산 기준입니다.
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
-          <RecordTile
-            label="최장 연승"
-            value={
-              records.longestWinStreak
-                ? `${records.longestWinStreak.name} · ${records.longestWinStreak.value}연승`
-                : null
-            }
-          />
-          <RecordTile
-            label="최장 연패"
-            value={
-              records.longestLossStreak
-                ? `${records.longestLossStreak.name} · ${records.longestLossStreak.value}연패`
-                : null
-            }
-          />
-          <RecordTile
-            label="단일 게임 최고 점수"
-            value={
-              records.highestSingleGamePoints
-                ? `${records.highestSingleGamePoints.winnerName} vs ${records.highestSingleGamePoints.loserName} · ${records.highestSingleGamePoints.points}점 (${records.highestSingleGamePoints.date})`
-                : null
-            }
-          />
-          <RecordTile
+          <RecordCategory label="최장 연승" tiers={records.longestWinStreak} unit="연승" />
+          <RecordCategory label="최장 연패" tiers={records.longestLossStreak} unit="연패" />
+          <RecordCategory
             label="하루 최다 승리"
-            value={
-              records.mostWinsInOneDay
-                ? `${records.mostWinsInOneDay.name} · ${records.mostWinsInOneDay.date}에 ${records.mostWinsInOneDay.wins}승`
-                : null
-            }
+            tiers={records.mostWinsInOneDay}
+            unit="승"
           />
-          <RecordTile
+          <RecordCategory
             label="최다 참석 (개근왕)"
-            value={
-              records.mostAppearances
-                ? `${records.mostAppearances.name} · ${records.mostAppearances.value}회`
-                : null
-            }
+            tiers={records.mostAppearances}
+            unit="회"
           />
         </div>
       </section>
@@ -648,13 +662,45 @@ export default function StatsClient({
   );
 }
 
-function RecordTile({ label, value }: { label: string; value: string | null }) {
+function formatRecordEntry(e: RecordTierEntry, unit: string): string {
+  const range =
+    e.startDate && e.endDate
+      ? e.startDate === e.endDate
+        ? ` (${e.startDate})`
+        : ` (${e.startDate} ~ ${e.endDate})`
+      : "";
+  return `${e.name} · ${e.value}${unit}${range}`;
+}
+
+/** Renders up to 3 dense-ranked tiers (from computeRecords' topTiers), each tier possibly holding several tied entries shown as "공동 N위". */
+function RecordCategory({
+  label,
+  tiers,
+  unit,
+}: {
+  label: string;
+  tiers: RecordTier[];
+  unit: string;
+}) {
   return (
     <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
-      <p className="text-xs text-slate-400 mb-1">{label}</p>
-      <p className="text-sm font-semibold text-slate-900">
-        {value ?? <span className="text-slate-400 font-normal">아직 없음</span>}
-      </p>
+      <p className="text-xs text-slate-400 mb-1.5">{label}</p>
+      {tiers.length === 0 ? (
+        <p className="text-sm text-slate-400">아직 없음</p>
+      ) : (
+        <ul className="space-y-1">
+          {tiers.map((tier) => (
+            <li key={tier.rank} className="text-sm">
+              <span className="text-slate-400 mr-1.5 whitespace-nowrap">
+                {tier.entries.length > 1 ? `공동 ${tier.rank}위` : `${tier.rank}위`}
+              </span>
+              <span className="font-semibold text-slate-900">
+                {tier.entries.map((e) => formatRecordEntry(e, unit)).join(", ")}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

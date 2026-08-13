@@ -83,7 +83,7 @@ export default async function DashboardPage() {
         <section className="bg-white rounded-2xl border border-slate-200 p-5">
           <h2 className="font-semibold">순위 (누적 점수)</h2>
           <p className="text-xs text-slate-400 mb-4">
-            게임 승/패 기준 — 과거 누적기록(조정)은 반영되지 않습니다.
+            게임 승/무/패 기준 — 과거 누적기록(조정)은 반영되지 않습니다.
           </p>
           {topRanked.length === 0 ? (
             <p className="text-sm text-slate-400">아직 기록된 게임이 없습니다.</p>
@@ -104,7 +104,7 @@ export default async function DashboardPage() {
                     </Link>
                   </span>
                   <span className="text-slate-500">
-                    {s.wins}승 {s.losses}패
+                    {s.wins}승 {s.appearances - s.wins - s.losses}무 {s.losses}패
                     <span
                       className={`ml-2 font-semibold ${
                         s.netPoints > 0

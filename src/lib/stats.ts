@@ -22,7 +22,8 @@ export interface ParticipantStat {
   wins: number;
   losses: number;
   appearances: number; // times listed as attendee (includes wins/losses/others)
-  winRate: number; // wins / (wins + losses), 0 if no decisive games
+  winRate: number; // 승률A: wins / (wins + losses), 0 if no decisive games
+  winRateB: number; // 승률B: wins / appearances, 0 if no appearances
   netPoints: number; // sum of points won minus points lost (uses each game's `points`, default 1)
 }
 
@@ -41,6 +42,7 @@ export function computeParticipantStats(
       losses: 0,
       appearances: 0,
       winRate: 0,
+      winRateB: 0,
       netPoints: 0,
     });
   }
@@ -56,6 +58,7 @@ export function computeParticipantStats(
         losses: 0,
         appearances: 0,
         winRate: 0,
+        winRateB: 0,
         netPoints: 0,
       };
       stats.set(id, s);
@@ -76,7 +79,8 @@ export function computeParticipantStats(
 
   for (const s of stats.values()) {
     const decisive = s.wins + s.losses;
-    s.winRate = decisive > 0 ? s.wins / decisive : 0;
+    s.winRate = decisive > 0 ? s.wins / decisive : 0; // 승률A
+    s.winRateB = s.appearances > 0 ? s.wins / s.appearances : 0; // 승률B
   }
 
   return Array.from(stats.values()).sort((a, b) => b.netPoints - a.netPoints);
@@ -466,9 +470,11 @@ export interface GameTypeParticipantStat {
   id: string;
   name: string;
   gameType: GameType;
+  appearances: number;
   wins: number;
   losses: number;
-  winRate: number;
+  winRate: number; // 승률A
+  winRateB: number; // 승률B
   netPoints: number;
 }
 
@@ -487,9 +493,11 @@ export function computeGameTypeStats(
         id: s.id,
         name: s.name,
         gameType: gt,
+        appearances: s.appearances,
         wins: s.wins,
         losses: s.losses,
         winRate: s.winRate,
+        winRateB: s.winRateB,
         netPoints: s.netPoints,
       });
     }
@@ -497,37 +505,42 @@ export function computeGameTypeStats(
   return result;
 }
 
-// ---------- v2.10: records / hall of fame ----------
+// ---------- v2.10/v2.13: records / hall of fame ----------
 
-export interface RecordHolder {
+export interface RecordTierEntry {
   id: string;
   name: string;
   value: number;
+  startDate?: string; // present for streaks/day-wins; a single-day entry has startDate === endDate
+  endDate?: string;
 }
 
-export interface SingleGameRecord {
-  gameId: string;
-  winnerId: string;
-  winnerName: string;
-  loserId: string;
-  loserName: string;
-  points: number;
-  date: string;
+export interface RecordTier {
+  rank: number; // 1..tiers, dense — ties at a rank all land in the same tier's entries
+  entries: RecordTierEntry[];
 }
 
-export interface DayWinsRecord {
-  id: string;
-  name: string;
-  date: string;
-  wins: number;
+/**
+ * Groups entries into up to `tiers` distinct-value bands using dense ranking
+ * (1, 2, 3 — not 1, 1, 3), so every tied entry at a value shares that band's
+ * rank ("공동 1위" etc.) and the next distinct value is simply the next rank,
+ * not skipped the way competition ranking would.
+ */
+function topTiers(entries: RecordTierEntry[], tiers = 3): RecordTier[] {
+  const distinctValues = Array.from(new Set(entries.map((e) => e.value)))
+    .sort((a, b) => b - a)
+    .slice(0, tiers);
+  return distinctValues.map((value, i) => ({
+    rank: i + 1,
+    entries: entries.filter((e) => e.value === value),
+  }));
 }
 
 export interface RecordsSummary {
-  longestWinStreak: RecordHolder | null;
-  longestLossStreak: RecordHolder | null;
-  highestSingleGamePoints: SingleGameRecord | null;
-  mostWinsInOneDay: DayWinsRecord | null;
-  mostAppearances: RecordHolder | null;
+  longestWinStreak: RecordTier[];
+  longestLossStreak: RecordTier[];
+  mostWinsInOneDay: RecordTier[];
+  mostAppearances: RecordTier[];
 }
 
 /**
@@ -535,7 +548,10 @@ export interface RecordsSummary {
  * active game list regardless of any period/type filter the caller might
  * otherwise apply elsewhere on the page, since "longest win streak ever"
  * stops meaning what it says the moment it's silently scoped to a filter.
- * Callers should label this section as career-wide in the UI.
+ * Callers should label this section as career-wide in the UI. Each category
+ * shows up to the top 3 distinct values, with every participant tied at a
+ * value grouped into that same rank (so "공동 1위" etc. is possible at any
+ * of the 3 shown ranks).
  */
 export function computeRecords(
   participants: ParticipantLike[],
@@ -545,47 +561,65 @@ export function computeRecords(
   const nameOf = new Map(participants.map((p) => [p.id, p.name]));
   const nameFor = (id: string) => nameOf.get(id) ?? "(삭제된 참가자)";
 
-  let longestWinStreak: RecordHolder | null = null;
-  let longestLossStreak: RecordHolder | null = null;
+  const winStreakEntries: RecordTierEntry[] = [];
+  const lossStreakEntries: RecordTierEntry[] = [];
 
   for (const p of participants) {
     const chronological = decisiveGamesForParticipant(p.id, active);
     let currentType: "W" | "L" | null = null;
     let currentLength = 0;
+    // Tracks the min/max `date` seen within the run currently being
+    // accumulated (not the first/last game by createdAt order) — an admin
+    // can now edit a game's `date` independently of `createdAt` (PRD 11), so
+    // taking the array-position first/last could render an end-before-start
+    // range. Min/max stays correct regardless of how the dates land.
+    let currentStart = "";
+    let currentEnd = "";
     let bestWin = 0;
+    let bestWinRange: { start: string; end: string } | null = null;
     let bestLoss = 0;
+    let bestLossRange: { start: string; end: string } | null = null;
+
     for (const g of chronological) {
       const type: "W" | "L" = g.winnerId === p.id ? "W" : "L";
       if (type === currentType) {
         currentLength++;
+        if (g.date < currentStart) currentStart = g.date;
+        if (g.date > currentEnd) currentEnd = g.date;
       } else {
         currentType = type;
         currentLength = 1;
+        currentStart = g.date;
+        currentEnd = g.date;
       }
-      if (type === "W") bestWin = Math.max(bestWin, currentLength);
-      else bestLoss = Math.max(bestLoss, currentLength);
+      // Length and range must update together — capturing them in separate
+      // branches would let the two desync.
+      if (type === "W" && currentLength > bestWin) {
+        bestWin = currentLength;
+        bestWinRange = { start: currentStart, end: currentEnd };
+      } else if (type === "L" && currentLength > bestLoss) {
+        bestLoss = currentLength;
+        bestLossRange = { start: currentStart, end: currentEnd };
+      }
     }
-    if (bestWin > 0 && (!longestWinStreak || bestWin > longestWinStreak.value)) {
-      longestWinStreak = { id: p.id, name: p.name, value: bestWin };
-    }
-    if (bestLoss > 0 && (!longestLossStreak || bestLoss > longestLossStreak.value)) {
-      longestLossStreak = { id: p.id, name: p.name, value: bestLoss };
-    }
-  }
 
-  let highestSingleGamePoints: SingleGameRecord | null = null;
-  for (const g of active) {
-    const points = g.points ?? 1;
-    if (!highestSingleGamePoints || points > highestSingleGamePoints.points) {
-      highestSingleGamePoints = {
-        gameId: g.id,
-        winnerId: g.winnerId,
-        winnerName: nameFor(g.winnerId),
-        loserId: g.loserId,
-        loserName: nameFor(g.loserId),
-        points,
-        date: g.date,
-      };
+    if (bestWin > 0 && bestWinRange) {
+      winStreakEntries.push({
+        id: p.id,
+        name: p.name,
+        value: bestWin,
+        startDate: bestWinRange.start,
+        endDate: bestWinRange.end,
+      });
+    }
+    if (bestLoss > 0 && bestLossRange) {
+      lossStreakEntries.push({
+        id: p.id,
+        name: p.name,
+        value: bestLoss,
+        startDate: bestLossRange.start,
+        endDate: bestLossRange.end,
+      });
     }
   }
 
@@ -594,29 +628,23 @@ export function computeRecords(
     const key = `${g.winnerId}|${g.date}`;
     winsByDay.set(key, (winsByDay.get(key) ?? 0) + 1);
   }
-  let mostWinsInOneDay: DayWinsRecord | null = null;
-  for (const [key, wins] of winsByDay) {
-    if (!mostWinsInOneDay || wins > mostWinsInOneDay.wins) {
+  const dayWinEntries: RecordTierEntry[] = Array.from(winsByDay.entries()).map(
+    ([key, wins]) => {
       const [id, date] = key.split("|");
-      mostWinsInOneDay = { id, name: nameFor(id), date, wins };
+      return { id, name: nameFor(id), value: wins, startDate: date, endDate: date };
     }
-  }
+  );
 
   const stats = computeParticipantStats(participants, active);
-  const mostAppearances = stats.reduce<RecordHolder | null>((best, s) => {
-    if (s.appearances === 0) return best;
-    if (!best || s.appearances > best.value) {
-      return { id: s.id, name: s.name, value: s.appearances };
-    }
-    return best;
-  }, null);
+  const appearanceEntries: RecordTierEntry[] = stats
+    .filter((s) => s.appearances > 0)
+    .map((s) => ({ id: s.id, name: s.name, value: s.appearances }));
 
   return {
-    longestWinStreak,
-    longestLossStreak,
-    highestSingleGamePoints,
-    mostWinsInOneDay,
-    mostAppearances,
+    longestWinStreak: topTiers(winStreakEntries),
+    longestLossStreak: topTiers(lossStreakEntries),
+    mostWinsInOneDay: topTiers(dayWinEntries),
+    mostAppearances: topTiers(appearanceEntries),
   };
 }
 
@@ -702,17 +730,38 @@ export function filterGamesByType(
   return games.filter((g) => g.gameType === gameType);
 }
 
-export type RangePreset = "7d" | "30d" | "90d" | "year" | "all";
+export type RangePreset = "7d" | "30d" | "90d" | "year" | "all" | "custom";
+
+export interface CustomRange {
+  start?: string; // yyyy-MM-dd, inclusive
+  end?: string; // yyyy-MM-dd, inclusive
+}
 
 /**
  * Generic date-range filter — works on anything with a `.date` string, not
  * just games, so the same preset logic can filter Settlement[] (e.g. for the
  * donation ranking) without duplicating the date math.
+ *
+ * `custom` is only consulted when `preset === "custom"`. Every `.date` in
+ * this app is already a plain "yyyy-MM-dd" Asia/Seoul wall-clock string
+ * (never a UTC instant), so the custom range compares those strings directly
+ * rather than going through `new Date(...)`, which would parse as UTC
+ * midnight and can shift the boundary by a day.
  */
 export function filterByDatePreset<T extends { date: string }>(
   items: T[],
-  preset: RangePreset
+  preset: RangePreset,
+  custom?: CustomRange
 ): T[] {
+  if (preset === "custom") {
+    if (!custom?.start && !custom?.end) return items;
+    return items.filter(
+      (it) =>
+        (!custom.start || it.date >= custom.start) &&
+        (!custom.end || it.date <= custom.end)
+    );
+  }
+
   if (preset === "all") return items;
   const now = new Date();
   let days: number | null = null;
