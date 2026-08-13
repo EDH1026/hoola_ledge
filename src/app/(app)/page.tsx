@@ -1,10 +1,16 @@
 import Link from "next/link";
 import { readDB } from "@/lib/storage";
-import { computeParticipantStats } from "@/lib/stats";
+import {
+  computeParticipantStats,
+  computeHotColdPlayers,
+  computeRecentForm,
+  computeCurrentStreaks,
+  computeTodaySummary,
+} from "@/lib/stats";
 import { simplifiedSettlements } from "@/lib/settle";
 import { activeGames } from "@/lib/games";
 import { format } from "date-fns";
-import { GameTypeBadge } from "@/components/badges";
+import { GameTypeBadge, ResultBadge, StreakBadge } from "@/components/badges";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +29,19 @@ export default async function DashboardPage() {
     .slice(0, 6);
   const transactions = simplifiedSettlements(db.games, db.settlements, db.adjustments);
 
+  const today = computeTodaySummary(db.participants, db.games);
+  const { hot, cold } = computeHotColdPlayers(db.participants, db.games);
+  const activeParticipants = db.participants.filter((p) => p.active);
+  const formById = new Map(
+    computeRecentForm(activeParticipants, db.games, 5).map((f) => [f.id, f])
+  );
+  const streakById = new Map(
+    computeCurrentStreaks(activeParticipants, db.games).map((s) => [s.id, s])
+  );
+  // Only show the form/streak row for participants who actually have a
+  // decisive game — an untouched roster entry has nothing to show here.
+  const formRows = stats.filter((s) => s.appearances > 0 && s.wins + s.losses > 0);
+
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
@@ -38,6 +57,26 @@ export default async function DashboardPage() {
         >
           + 새 게임 기록
         </Link>
+      </div>
+
+      <div className="rounded-xl bg-slate-900 text-white px-4 py-3 text-sm flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="font-semibold">오늘의 요약</span>
+        {today.gameCount === 0 ? (
+          <span className="text-slate-300">오늘은 아직 기록된 게임이 없습니다.</span>
+        ) : (
+          <span className="text-slate-300">
+            오늘 {today.gameCount}게임 진행
+            {today.topWinner && (
+              <>
+                {" "}
+                · 오늘의 최다 승자{" "}
+                <span className="text-white font-medium">
+                  {today.topWinner.name} ({today.topWinner.wins}승)
+                </span>
+              </>
+            )}
+          </span>
+        )}
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
@@ -119,6 +158,99 @@ export default async function DashboardPage() {
           </Link>
         </section>
       </div>
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <section className="bg-white rounded-2xl border border-slate-200 p-5">
+          <h2 className="font-semibold">핫 플레이어</h2>
+          <p className="text-xs text-slate-400 mb-4">
+            최근 14일간 3경기 이상 치른 참가자 중 통산 승률보다 최근 승률이
+            높은 순
+          </p>
+          {hot.length === 0 ? (
+            <p className="text-sm text-slate-400">
+              조건을 만족하는 참가자가 아직 없습니다.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {hot.map((h, i) => (
+                <li key={h.id} className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 text-slate-400">{i + 1}</span>
+                    <span className="font-medium">{h.name}</span>
+                  </span>
+                  <span className="text-emerald-600 font-semibold">
+                    {(h.careerWinRate * 100).toFixed(0)}% → {(h.recentWinRate * 100).toFixed(0)}%
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="bg-white rounded-2xl border border-slate-200 p-5">
+          <h2 className="font-semibold">콜드 플레이어</h2>
+          <p className="text-xs text-slate-400 mb-4">
+            최근 14일간 3경기 이상 치른 참가자 중 통산 승률보다 최근 승률이
+            낮은 순
+          </p>
+          {cold.length === 0 ? (
+            <p className="text-sm text-slate-400">
+              조건을 만족하는 참가자가 아직 없습니다.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {cold.map((c, i) => (
+                <li key={c.id} className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 text-slate-400">{i + 1}</span>
+                    <span className="font-medium">{c.name}</span>
+                  </span>
+                  <span className="text-red-500 font-semibold">
+                    {(c.careerWinRate * 100).toFixed(0)}% → {(c.recentWinRate * 100).toFixed(0)}%
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+
+      <section className="bg-white rounded-2xl border border-slate-200 p-5">
+        <h2 className="font-semibold mb-4">최근 폼 & 스트릭</h2>
+        {formRows.length === 0 ? (
+          <p className="text-sm text-slate-400">아직 기록된 게임이 없습니다.</p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {formRows.map((s) => {
+              const form = formById.get(s.id);
+              const streak = streakById.get(s.id);
+              return (
+                <li
+                  key={s.id}
+                  className="py-2.5 flex flex-wrap items-center justify-between gap-2 text-sm"
+                >
+                  <span className="font-medium">{s.name}</span>
+                  <span className="flex items-center gap-3">
+                    <span className="flex items-center gap-1">
+                      {form?.results.length ? (
+                        [...form.results].reverse().map((r, i) => (
+                          <ResultBadge key={i} result={r} />
+                        ))
+                      ) : (
+                        <span className="text-xs text-slate-400">-</span>
+                      )}
+                    </span>
+                    <StreakBadge type={streak?.type ?? null} length={streak?.length ?? 0} />
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <p className="text-xs text-slate-400 mt-3">
+          최근 폼은 왼쪽이 과거, 오른쪽이 가장 최근 경기입니다 (최근 5경기).
+        </p>
+      </section>
 
       <section className="bg-white rounded-2xl border border-slate-200 p-5">
         <h2 className="font-semibold mb-4">최근 게임</h2>

@@ -6,6 +6,7 @@ import { deleteGame } from "@/lib/actions";
 import { withinDayKey } from "@/lib/games";
 import { GameResult } from "@/lib/types";
 import { GameTypeBadge } from "@/components/badges";
+import { computeParticipantPointTotals } from "@/lib/stats";
 
 interface ParticipantLite {
   id: string;
@@ -57,6 +58,10 @@ export default function GamesListClient({
   }, [games, year, month, day]);
 
   const pointsSum = filtered.reduce((sum, g) => sum + (g.points ?? 1), 0);
+  const pointTotals = useMemo(
+    () => computeParticipantPointTotals(participants, filtered),
+    [participants, filtered]
+  );
 
   function handleDelete(id: string) {
     setDeletingId(id);
@@ -120,6 +125,51 @@ export default function GamesListClient({
             <span className="font-semibold text-slate-900">{pointsSum}점</span>
           </div>
         </div>
+      </section>
+
+      <section className="bg-white rounded-2xl border border-slate-200 p-4">
+        <h2 className="text-sm font-semibold mb-3">이 구간 인별 점수</h2>
+        {pointTotals.length === 0 ? (
+          <p className="text-sm text-slate-400">
+            이 구간에 집계할 게임이 없습니다.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-slate-400 text-xs">
+                  <th className="py-1.5 pr-4">순위</th>
+                  <th className="py-1.5 pr-4">이름</th>
+                  <th className="py-1.5 pr-4">딴 점수</th>
+                  <th className="py-1.5 pr-4">잃은 점수</th>
+                  <th className="py-1.5 pr-4">순점수</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pointTotals.map((p, i) => (
+                  <tr key={p.id} className="border-t border-slate-100">
+                    <td className="py-1.5 pr-4 text-slate-400">{i + 1}</td>
+                    <td className="py-1.5 pr-4 font-medium">{p.name}</td>
+                    <td className="py-1.5 pr-4 text-emerald-600">{p.pointsWon}</td>
+                    <td className="py-1.5 pr-4 text-red-500">{p.pointsLost}</td>
+                    <td
+                      className={`py-1.5 pr-4 font-semibold ${
+                        p.netPoints > 0
+                          ? "text-emerald-600"
+                          : p.netPoints < 0
+                          ? "text-red-500"
+                          : "text-slate-400"
+                      }`}
+                    >
+                      {p.netPoints > 0 ? "+" : ""}
+                      {p.netPoints}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       <section className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
