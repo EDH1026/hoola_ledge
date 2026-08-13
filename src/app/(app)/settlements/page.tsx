@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { format } from "date-fns";
-import { readDB } from "@/lib/storage";
+import { getFullDB } from "@/lib/storage";
 import { computeNetBalances, simplifyDebts } from "@/lib/settle";
 import { deleteSettlement } from "@/lib/actions";
 import { SettlementTypeBadge, LedgerAdjustmentBadge } from "@/components/badges";
@@ -41,7 +41,7 @@ export default async function SettlementsPage({
     ? (rawDonationRange as RangePreset)
     : "all";
 
-  const db = await readDB();
+  const db = await getFullDB();
   const participants = [...db.participants].sort((a, b) =>
     a.name.localeCompare(b.name, "ko")
   );

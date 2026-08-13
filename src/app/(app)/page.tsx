@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { readDB } from "@/lib/storage";
+import { getFullDB } from "@/lib/storage";
 import {
   computeParticipantStats,
   computeHotColdPlayers,
@@ -19,7 +19,7 @@ function nameOf(map: Map<string, string>, id: string) {
 }
 
 export default async function DashboardPage() {
-  const db = await readDB();
+  const db = await getFullDB();
   const nameMap = new Map(db.participants.map((p) => [p.id, p.name]));
   const gamesActive = activeGames(db.games);
   const stats = computeParticipantStats(db.participants, db.games);

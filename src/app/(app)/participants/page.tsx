@@ -1,13 +1,11 @@
-import { readDB } from "@/lib/storage";
+import { listParticipants } from "@/lib/storage";
 import { addParticipant, renameParticipant, setParticipantActive } from "@/lib/actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function ParticipantsPage() {
-  const db = await readDB();
-  const participants = [...db.participants].sort((a, b) =>
-    a.name.localeCompare(b.name, "ko")
-  );
+  const all = await listParticipants();
+  const participants = [...all].sort((a, b) => a.name.localeCompare(b.name, "ko"));
   const active = participants.filter((p) => p.active);
   const inactive = participants.filter((p) => !p.active);
 

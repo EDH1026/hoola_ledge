@@ -1,12 +1,12 @@
-import { readDB } from "@/lib/storage";
+import { listParticipants } from "@/lib/storage";
 import { getPreviousAttendeeIds } from "@/lib/actions";
 import NewGameForm from "./NewGameForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function NewGamePage() {
-  const db = await readDB();
-  const activeParticipants = db.participants
+  const participants = await listParticipants();
+  const activeParticipants = participants
     .filter((p) => p.active)
     .sort((a, b) => a.name.localeCompare(b.name, "ko"));
   const previousAttendeeIds = await getPreviousAttendeeIds();

@@ -1,18 +1,18 @@
 import Link from "next/link";
-import { readDB } from "@/lib/storage";
+import { listParticipants, listGames } from "@/lib/storage";
 import { activeGames, computeDailySequenceNumbers } from "@/lib/games";
 import GamesListClient from "./GamesListClient";
 
 export const dynamic = "force-dynamic";
 
 export default async function GamesPage() {
-  const db = await readDB();
-  const games = activeGames(db.games);
+  const [participants, allGames] = await Promise.all([listParticipants(), listGames()]);
+  const games = activeGames(allGames);
 
   // Computed over ALL active games (not the filtered subset) so N차전 numbers
   // never shift just because a year/month/day filter is applied on top.
   const sequenceNumbers: Record<string, number> = {};
-  for (const [id, seq] of computeDailySequenceNumbers(db.games)) {
+  for (const [id, seq] of computeDailySequenceNumbers(allGames)) {
     sequenceNumbers[id] = seq;
   }
 
@@ -33,7 +33,7 @@ export default async function GamesPage() {
 
       <GamesListClient
         games={games}
-        participants={db.participants.map((p) => ({ id: p.id, name: p.name }))}
+        participants={participants.map((p) => ({ id: p.id, name: p.name }))}
         sequenceNumbers={sequenceNumbers}
       />
     </div>

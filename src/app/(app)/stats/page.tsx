@@ -1,4 +1,4 @@
-import { readDB } from "@/lib/storage";
+import { listParticipants, listGames } from "@/lib/storage";
 import StatsClient from "./StatsClient";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +8,7 @@ export default async function StatsPage({
 }: {
   searchParams: Promise<{ h2h?: string }>;
 }) {
-  const db = await readDB();
+  const [participants, games] = await Promise.all([listParticipants(), listGames()]);
   const { h2h } = await searchParams;
 
   return (
@@ -20,12 +20,12 @@ export default async function StatsPage({
         </p>
       </div>
       <StatsClient
-        participants={db.participants.map((p) => ({
+        participants={participants.map((p) => ({
           id: p.id,
           name: p.name,
           active: p.active,
         }))}
-        games={db.games}
+        games={games}
         initialH2hParticipantId={h2h ?? null}
       />
     </div>

@@ -30,14 +30,14 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files (the .example template has no secrets and is meant to be committed —
+# it's referenced by README.md's setup instructions, so it needs to actually be
+# in the repo for a fresh clone to work)
 .env*
+!.env.local.example
 
 # vercel
 .vercel
-
-# local JSON "database" (dev only — production uses Vercel Blob)
-/data
 
 # typescript
 *.tsbuildinfo

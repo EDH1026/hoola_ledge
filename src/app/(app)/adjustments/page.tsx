@@ -1,25 +1,25 @@
 import { format } from "date-fns";
-import { readDB } from "@/lib/storage";
+import { listParticipants, listAdjustments } from "@/lib/storage";
 import {
   addLedgerAdjustment,
   updateLedgerAdjustment,
   deleteLedgerAdjustment,
 } from "@/lib/actions";
 import { LedgerAdjustmentBadge } from "@/components/badges";
+import { todayInSeoul } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 export default async function AdjustmentsPage() {
-  const db = await readDB();
-  const participants = [...db.participants].sort((a, b) =>
+  const [allParticipants, allAdjustments] = await Promise.all([
+    listParticipants(),
+    listAdjustments(),
+  ]);
+  const participants = [...allParticipants].sort((a, b) =>
     a.name.localeCompare(b.name, "ko")
   );
-  const nameMap = new Map(db.participants.map((p) => [p.id, p.name]));
-  const adjustments = [...db.adjustments].sort((a, b) =>
+  const nameMap = new Map(allParticipants.map((p) => [p.id, p.name]));
+  const adjustments = [...allAdjustments].sort((a, b) =>
     b.createdAt.localeCompare(a.createdAt)
   );
 
@@ -106,7 +106,7 @@ export default async function AdjustmentsPage() {
               <input
                 type="date"
                 name="date"
-                defaultValue={todayIso()}
+                defaultValue={todayInSeoul()}
                 className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
               />
             </div>
