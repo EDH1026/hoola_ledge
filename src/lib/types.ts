@@ -30,11 +30,11 @@ export interface GameResult {
 }
 
 // "waiver" is kept only so existing stored records keep parsing; new writes
-// only ever use "payment" | "donation" (see actions.ts). Read sites must
-// normalize "waiver" to "donation" before branching on type.
-export type SettlementType = "payment" | "donation" | "waiver";
+// only ever use "payment" | "donation" | "proxy_payment" (see actions.ts).
+// Read sites must normalize "waiver" to "donation" before branching on type.
+export type SettlementType = "payment" | "donation" | "proxy_payment" | "waiver";
 // The type new Settlement records are allowed to be written with.
-export type WritableSettlementType = "payment" | "donation";
+export type WritableSettlementType = "payment" | "donation" | "proxy_payment";
 
 export interface Settlement {
   id: string;
@@ -62,11 +62,12 @@ export interface LedgerAdjustment {
   createdAt: string; // ISO datetime
 }
 
-/** Canonicalizes a possibly-legacy SettlementType down to the two current values. */
+/** Canonicalizes a possibly-legacy SettlementType down to the current writable values. */
 export function normalizeSettlementType(
   type: SettlementType | undefined
 ): WritableSettlementType {
   if (type === "donation" || type === "waiver") return "donation";
+  if (type === "proxy_payment") return "proxy_payment";
   return "payment";
 }
 

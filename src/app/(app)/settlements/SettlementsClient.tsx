@@ -106,6 +106,17 @@ export default function SettlementsClient({
         </p>
         <DonationForm participants={participants} onRecorded={handleRecorded} />
       </section>
+
+      <section className="bg-white rounded-2xl border border-slate-200 p-5">
+        <h2 className="font-semibold mb-1">대리 변제</h2>
+        <p className="text-xs text-slate-400 mb-4">
+          누군가(대리인)가 다른 사람(원 채무자)의 빚을 대신 갚아줄 때 기록합니다.
+          받는 사람의 잔액은 그만큼 줄고, 대리인은 그만큼을 받을 수 있게 됩니다.
+          원 채무자의 잔액 자체는 바뀌지 않습니다 — 갚아야 할 대상이 받는 사람에서
+          대리인으로 바뀔 뿐입니다.
+        </p>
+        <ProxyPaymentForm participants={participants} onRecorded={handleRecorded} />
+      </section>
     </div>
   );
 }
@@ -409,6 +420,217 @@ function DonationForm({
           type="button"
           onClick={goToConfirm}
           className="rounded-lg bg-amber-600 text-white text-sm font-medium px-4 py-2 hover:bg-amber-700 transition"
+        >
+          다음
+        </button>
+      </div>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+// The debtor (누구를 대신하여) never touches the balance math — a proxy
+// payment moves the creditor's credit down and the payer's balance up by the
+// exact same amount as a normal "payment" (see settle.ts's computeNetBalances,
+// whose non-donation branch already covers "proxy_payment"). The debtor's own
+// balance is unchanged: their obligation just moves from the creditor to the
+// payer. Since Settlement has no dedicated field for "on whose behalf", the
+// debtor's name is composed into the note text at submit time — no schema
+// change needed for that part.
+function ProxyPaymentForm({
+  participants,
+  onRecorded,
+}: {
+  participants: ParticipantLite[];
+  onRecorded: (detail: JustRecorded) => void;
+}) {
+  const [payerId, setPayerId] = useState(participants[0]?.id ?? "");
+  const [debtorId, setDebtorId] = useState(participants[1]?.id ?? participants[0]?.id ?? "");
+  const [creditorId, setCreditorId] = useState(
+    participants[2]?.id ?? participants[1]?.id ?? participants[0]?.id ?? ""
+  );
+  const [amountText, setAmountText] = useState("");
+  const [note, setNote] = useState("");
+  const [step, setStep] = useState<"idle" | "confirm">("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [isSaving, startTransition] = useTransition();
+
+  const nameMap = useMemo(
+    () => new Map(participants.map((p) => [p.id, p.name])),
+    [participants]
+  );
+  const amount = Number(amountText);
+  const amountValid = amountText.trim() !== "" && Number.isInteger(amount) && amount >= 1;
+  const isLarge = amountValid && amount >= LARGE_AMOUNT_THRESHOLD;
+
+  function goToConfirm() {
+    setError(null);
+    if (payerId === creditorId) {
+      setError("대리인과 받는 사람이 같을 수 없습니다.");
+      return;
+    }
+    if (payerId === debtorId) {
+      setError("대리인은 원 채무자와 달라야 합니다 (같으면 '실제 정산'을 이용해 주세요).");
+      return;
+    }
+    if (debtorId === creditorId) {
+      setError("원 채무자와 받는 사람이 같을 수 없습니다.");
+      return;
+    }
+    if (!amountValid) {
+      setError("1 이상의 정수 금액을 입력해 주세요.");
+      return;
+    }
+    setStep("confirm");
+  }
+
+  function handleConfirm() {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const trimmedNote = note.trim();
+        const composedNote = `${nameMap.get(debtorId)} 대신 지급${
+          trimmedNote ? ` · ${trimmedNote}` : ""
+        }`;
+        const { id } = await recordSettlement({
+          fromId: payerId,
+          toId: creditorId,
+          amount,
+          type: "proxy_payment",
+          note: composedNote,
+        });
+        onRecorded({
+          id,
+          summary: `${nameMap.get(payerId)} → ${nameMap.get(creditorId)} ${amount}점 (${nameMap.get(
+            debtorId
+          )} 대신, 대리 변제)`,
+        });
+        setStep("idle");
+        setAmountText("");
+        setNote("");
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "기록에 실패했습니다.");
+      }
+    });
+  }
+
+  if (step === "confirm") {
+    return (
+      <div className="space-y-2">
+        <p className="text-sm">
+          <span className="font-semibold">{nameMap.get(payerId)}</span>가{" "}
+          <span className="font-semibold">{nameMap.get(debtorId)}</span>을(를) 대신하여{" "}
+          <span className="font-semibold">{nameMap.get(creditorId)}</span>에게{" "}
+          <span className="font-semibold">{amount}점</span>을 대리 변제로 기록합니다.
+        </p>
+        <p className="text-xs text-slate-400">
+          이후 {nameMap.get(debtorId)}의 잔액은 그대로 유지되고,{" "}
+          {nameMap.get(payerId)}이(가) 그만큼을 돌려받을 수 있게 됩니다.
+        </p>
+        {isLarge && (
+          <WarningBanner>
+            {LARGE_AMOUNT_THRESHOLD}점 이상의 큰 금액입니다. 한 번 더 확인해
+            주세요.
+          </WarningBanner>
+        )}
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={isSaving}
+            className="rounded-lg bg-sky-600 text-white text-sm font-medium px-4 py-2 hover:bg-sky-700 transition disabled:opacity-50"
+          >
+            {isSaving ? "기록 중..." : "확인 및 대리 변제 기록"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setStep("idle")}
+            disabled={isSaving}
+            className="rounded-lg bg-white border border-slate-300 text-slate-600 text-sm font-medium px-4 py-2 hover:bg-slate-100 transition"
+          >
+            취소
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-end gap-3">
+        <div>
+          <label className="block text-xs text-slate-500 mb-1">
+            대리인 (실제로 지불한 사람)
+          </label>
+          <select
+            value={payerId}
+            onChange={(e) => setPayerId(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-w-[120px]"
+          >
+            {participants.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-slate-500 mb-1">
+            원 채무자 (누구를 대신하여)
+          </label>
+          <select
+            value={debtorId}
+            onChange={(e) => setDebtorId(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-w-[120px]"
+          >
+            {participants.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-slate-500 mb-1">받는 사람 (채권자)</label>
+          <select
+            value={creditorId}
+            onChange={(e) => setCreditorId(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-w-[120px]"
+          >
+            {participants.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-slate-500 mb-1">금액</label>
+          <input
+            type="number"
+            min={1}
+            step={1}
+            value={amountText}
+            onChange={(e) => setAmountText(e.target.value)}
+            placeholder="금액"
+            className="w-20 rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+          />
+        </div>
+        <div className="flex-1 min-w-[160px]">
+          <label className="block text-xs text-slate-500 mb-1">메모 (선택)</label>
+          <input
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="예: 현금으로 대신 지불"
+            className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={goToConfirm}
+          className="rounded-lg bg-sky-600 text-white text-sm font-medium px-4 py-2 hover:bg-sky-700 transition"
         >
           다음
         </button>

@@ -1,0 +1,18 @@
+-- hoola_ledge v2.13 — adds "proxy_payment" (대리 변제) as a valid settlements.type.
+--
+-- How to run this:
+--   1. Open the Supabase dashboard for the `BackRoom` project
+--      (https://idmnlbltfzegokencwgh.supabase.co).
+--   2. Go to SQL Editor → New query.
+--   3. Paste this entire file and click "Run".
+--   4. Re-running it is safe — `ADD VALUE IF NOT EXISTS` is a no-op if the
+--      value already exists.
+--
+-- Must run BEFORE deploying the app code that writes "proxy_payment" rows —
+-- otherwise every 대리 변제 save fails with a Postgres
+-- "invalid input value for enum settlement_type" error (all other features
+-- are unaffected; this only touches the one new settlement type).
+--
+-- Postgres requires ADD VALUE to run outside a transaction block, so this is
+-- one bare statement — do not wrap it in BEGIN/COMMIT.
+alter type settlement_type add value if not exists 'proxy_payment';
