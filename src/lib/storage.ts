@@ -32,19 +32,21 @@ async function writeLocal(db: DB): Promise<void> {
 }
 
 async function readBlob(): Promise<DB> {
-  const { list } = await import("@vercel/blob");
-  const { blobs } = await list({ prefix: BLOB_PATHNAME });
-  const match = blobs.find((b) => b.pathname === BLOB_PATHNAME);
-  if (!match) return emptyDB();
-  const res = await fetch(match.url, { cache: "no-store" });
-  if (!res.ok) return emptyDB();
-  return (await res.json()) as DB;
+  const { get } = await import("@vercel/blob");
+  const result = await get(BLOB_PATHNAME, { access: "private", useCache: false });
+  if (!result || result.statusCode !== 200) return emptyDB();
+  const text = await new Response(result.stream).text();
+  try {
+    return JSON.parse(text) as DB;
+  } catch {
+    return emptyDB();
+  }
 }
 
 async function writeBlob(db: DB): Promise<void> {
   const { put } = await import("@vercel/blob");
   await put(BLOB_PATHNAME, JSON.stringify(db, null, 2), {
-    access: "public",
+    access: "private",
     contentType: "application/json",
     addRandomSuffix: false,
     allowOverwrite: true,
