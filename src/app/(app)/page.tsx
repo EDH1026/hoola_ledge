@@ -3,6 +3,7 @@ import { readDB } from "@/lib/storage";
 import { computeParticipantStats } from "@/lib/stats";
 import { simplifiedSettlements } from "@/lib/settle";
 import { format } from "date-fns";
+import { GameTypeBadge } from "@/components/badges";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ export default async function DashboardPage() {
   const recentGames = [...db.games]
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 6);
-  const transactions = simplifiedSettlements(db.games, db.settlements);
+  const transactions = simplifiedSettlements(db.games, db.settlements, db.adjustments);
 
   return (
     <div className="space-y-8">
@@ -39,7 +40,10 @@ export default async function DashboardPage() {
 
       <div className="grid gap-6 md:grid-cols-2">
         <section className="bg-white rounded-2xl border border-slate-200 p-5">
-          <h2 className="font-semibold mb-4">순위 (누적 점수)</h2>
+          <h2 className="font-semibold">순위 (누적 점수)</h2>
+          <p className="text-xs text-slate-400 mb-4">
+            게임 승/패 기준 — 과거 누적기록(조정)은 반영되지 않습니다.
+          </p>
           {topRanked.length === 0 ? (
             <p className="text-sm text-slate-400">아직 기록된 게임이 없습니다.</p>
           ) : (
@@ -116,13 +120,16 @@ export default async function DashboardPage() {
         ) : (
           <ul className="divide-y divide-slate-100">
             {recentGames.map((g) => (
-              <li key={g.id} className="py-2.5 flex items-center justify-between text-sm">
-                <span className="text-slate-500">{format(new Date(g.date), "yyyy-MM-dd")}</span>
+              <li key={g.id} className="py-2.5 flex flex-wrap items-center justify-between gap-2 text-sm">
+                <span className="flex items-center gap-2">
+                  <span className="text-slate-500">{format(new Date(g.date), "yyyy-MM-dd")}</span>
+                  <GameTypeBadge gameType={g.gameType} />
+                </span>
                 <span>
                   <span className="text-emerald-600 font-medium">
                     {nameOf(nameMap, g.winnerId)}
                   </span>
-                  <span className="text-slate-400 mx-1">1등 · 꼴찌</span>
+                  <span className="text-slate-400 mx-1">Win · Lose</span>
                   <span className="text-red-500 font-medium">
                     {nameOf(nameMap, g.loserId)}
                   </span>

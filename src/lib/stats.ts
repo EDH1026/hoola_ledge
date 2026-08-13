@@ -5,7 +5,7 @@ import {
   startOfYear,
   format,
 } from "date-fns";
-import { GameResult } from "./types";
+import { GameResult, GameType } from "./types";
 
 export interface ParticipantLike {
   id: string;
@@ -146,6 +146,16 @@ export function groupGamesByPeriod(
   return Array.from(buckets.values()).sort(
     (a, b) => a.start.getTime() - b.start.getTime()
   );
+}
+
+export type GameTypeFilter = GameType | "all";
+
+export function filterGamesByType(
+  games: GameResult[],
+  gameType: GameTypeFilter
+): GameResult[] {
+  if (gameType === "all") return games;
+  return games.filter((g) => g.gameType === gameType);
 }
 
 export type RangePreset = "7d" | "30d" | "90d" | "year" | "all";

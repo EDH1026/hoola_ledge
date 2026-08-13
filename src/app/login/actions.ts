@@ -2,7 +2,12 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { checkPassword, expectedToken, COOKIE_NAME } from "@/lib/auth";
+import {
+  checkPassword,
+  expectedToken,
+  COOKIE_NAME,
+  ADMIN_COOKIE_NAME,
+} from "@/lib/auth";
 
 export async function loginAction(formData: FormData) {
   const password = String(formData.get("password") ?? "");
@@ -29,5 +34,6 @@ export async function loginAction(formData: FormData) {
 export async function logoutAction() {
   const store = await cookies();
   store.delete(COOKIE_NAME);
+  store.delete(ADMIN_COOKIE_NAME);
   redirect("/login");
 }

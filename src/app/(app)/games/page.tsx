@@ -2,15 +2,21 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { readDB } from "@/lib/storage";
 import { deleteGame } from "@/lib/actions";
+import { computeDailySequenceNumbers, withinDayKey } from "@/lib/games";
+import { GameTypeBadge } from "@/components/badges";
 
 export const dynamic = "force-dynamic";
 
 export default async function GamesPage() {
   const db = await readDB();
   const nameMap = new Map(db.participants.map((p) => [p.id, p.name]));
+  const sequenceNumbers = computeDailySequenceNumbers(db.games);
+  // Newest date first; within a date, same key computeDailySequenceNumbers
+  // uses (descending) so the N차전 label next to each row always matches
+  // its position in this list.
   const games = [...db.games].sort((a, b) =>
     b.date === a.date
-      ? b.createdAt.localeCompare(a.createdAt)
+      ? withinDayKey(b).localeCompare(withinDayKey(a))
       : b.date.localeCompare(a.date)
   );
 
@@ -36,39 +42,47 @@ export default async function GamesPage() {
           <ul className="divide-y divide-slate-100">
             {games.map((g) => {
               const deleteWithId = deleteGame.bind(null, g.id);
+              const seq = sequenceNumbers.get(g.id);
+              const attendeeNames = g.attendeeIds.map(
+                (id) => nameMap.get(id) ?? "(삭제됨)"
+              );
               return (
-                <li
-                  key={g.id}
-                  className="p-4 flex flex-wrap items-center gap-3 justify-between"
-                >
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <span className="text-sm text-slate-400 w-24">
-                      {format(new Date(g.date), "yyyy-MM-dd")}
+                <li key={g.id} className="p-4 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2 justify-between">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm text-slate-400 whitespace-nowrap">
+                        {format(new Date(g.date), "yyyy-MM-dd")}
+                        {g.time ? ` ${g.time}` : ""}
+                        {seq ? ` · ${seq}차전` : ""}
+                      </span>
+                      <GameTypeBadge gameType={g.gameType} />
+                    </div>
+                    <form action={deleteWithId}>
+                      <button
+                        type="submit"
+                        className="text-xs text-slate-300 hover:text-red-600"
+                      >
+                        삭제
+                      </button>
+                    </form>
+                  </div>
+                  <div className="text-sm">
+                    <span className="font-semibold text-emerald-600">
+                      {nameMap.get(g.winnerId) ?? "(삭제됨)"}
                     </span>
-                    <span className="text-sm">
-                      <span className="font-semibold text-emerald-600">
-                        {nameMap.get(g.winnerId) ?? "(삭제됨)"}
-                      </span>
-                      <span className="text-slate-400 mx-1.5">1등 · 꼴찌</span>
-                      <span className="font-semibold text-red-500">
-                        {nameMap.get(g.loserId) ?? "(삭제됨)"}
-                      </span>
+                    <span className="text-slate-400 mx-1.5">Win · Lose</span>
+                    <span className="font-semibold text-red-500">
+                      {nameMap.get(g.loserId) ?? "(삭제됨)"}
                     </span>
                     {g.note && (
-                      <span className="text-xs text-slate-400">· {g.note}</span>
+                      <span className="text-xs text-slate-400 ml-2">
+                        · {g.note}
+                      </span>
                     )}
-                    <span className="text-xs text-slate-300">
-                      참가 {g.attendeeIds.length}명
-                    </span>
                   </div>
-                  <form action={deleteWithId}>
-                    <button
-                      type="submit"
-                      className="text-xs text-slate-300 hover:text-red-600"
-                    >
-                      삭제
-                    </button>
-                  </form>
+                  <p className="text-xs text-slate-400">
+                    참석 {g.attendeeIds.length}명 · {attendeeNames.join(", ")}
+                  </p>
                 </li>
               );
             })}

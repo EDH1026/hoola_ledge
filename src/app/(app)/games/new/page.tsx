@@ -16,7 +16,7 @@ export default async function NewGamePage() {
       <div>
         <h1 className="text-2xl font-bold">새 게임 기록</h1>
         <p className="text-sm text-slate-500 mt-1">
-          참가자를 고르고, 꼴찌를 1등에게 드래그하면 결과가 기록됩니다.
+          종목과 참가자를 고르고, Lose를 Win에게 드래그하면 결과가 기록됩니다.
         </p>
       </div>
 

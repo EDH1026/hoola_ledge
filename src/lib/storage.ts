@@ -13,10 +13,23 @@ const LOCAL_DB_PATH = path.join(process.cwd(), "data", "db.json");
 
 const USE_BLOB = !!process.env.BLOB_READ_WRITE_TOKEN;
 
+// Older db.json/Blob snapshots predate the `adjustments` collection (and any
+// future collection we might add the same way), so a plain JSON.parse can
+// hand back an object missing that key entirely. Normalize on every read
+// rather than migrating stored data, so old snapshots keep loading as-is.
+function normalize(db: Partial<DB>): DB {
+  return {
+    participants: db.participants ?? [],
+    games: db.games ?? [],
+    settlements: db.settlements ?? [],
+    adjustments: db.adjustments ?? [],
+  };
+}
+
 async function readLocal(): Promise<DB> {
   try {
     const raw = await fs.readFile(LOCAL_DB_PATH, "utf-8");
-    return JSON.parse(raw) as DB;
+    return normalize(JSON.parse(raw) as Partial<DB>);
   } catch {
     return emptyDB();
   }
@@ -37,7 +50,7 @@ async function readBlob(): Promise<DB> {
   if (!result || result.statusCode !== 200) return emptyDB();
   const text = await new Response(result.stream).text();
   try {
-    return JSON.parse(text) as DB;
+    return normalize(JSON.parse(text) as Partial<DB>);
   } catch {
     return emptyDB();
   }

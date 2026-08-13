@@ -14,6 +14,9 @@ export default async function ParticipantsPage() {
   return (
     <div className="space-y-8">
       <div>
+        <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium px-2.5 py-1 mb-2">
+          관리자 모드
+        </div>
         <h1 className="text-2xl font-bold">참가자 풀</h1>
         <p className="text-sm text-slate-500 mt-1">
           게임에 참여할 수 있는 전체 인원을 관리합니다. 비활성화된 참가자는 새 게임

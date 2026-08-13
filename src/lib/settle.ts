@@ -1,4 +1,4 @@
-import { GameResult, Settlement } from "./types";
+import { GameResult, LedgerAdjustment, Settlement } from "./types";
 
 /**
  * Net balance per participant.
@@ -7,7 +7,8 @@ import { GameResult, Settlement } from "./types";
  */
 export function computeNetBalances(
   games: GameResult[],
-  settlements: Settlement[]
+  settlements: Settlement[],
+  adjustments: LedgerAdjustment[] = []
 ): Map<string, number> {
   const balances = new Map<string, number>();
   const add = (id: string, delta: number) => {
@@ -20,10 +21,19 @@ export function computeNetBalances(
   }
 
   for (const s of settlements) {
-    // fromId actually paid toId `amount` points, so it reduces fromId's debt
-    // (balance moves toward 0 / positive) and reduces toId's credit.
+    // fromId actually paid (or was waived) toId `amount` points, so it
+    // reduces fromId's debt (balance moves toward 0 / positive) and reduces
+    // toId's credit. A waiver has the same balance effect as a payment.
     add(s.fromId, s.amount);
     add(s.toId, -s.amount);
+  }
+
+  for (const a of adjustments) {
+    // Opposite direction from Settlement: fromId is the debtor here, so
+    // recording the adjustment makes them owe more (balance moves negative)
+    // and makes toId owed more (balance moves positive).
+    add(a.fromId, -a.amount);
+    add(a.toId, a.amount);
   }
 
   // Clean up exact-zero entries for tidiness.
@@ -86,7 +96,8 @@ export function simplifyDebts(
 
 export function simplifiedSettlements(
   games: GameResult[],
-  settlements: Settlement[]
+  settlements: Settlement[],
+  adjustments: LedgerAdjustment[] = []
 ): Transaction[] {
-  return simplifyDebts(computeNetBalances(games, settlements));
+  return simplifyDebts(computeNetBalances(games, settlements, adjustments));
 }

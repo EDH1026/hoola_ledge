@@ -12,6 +12,7 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import { createGame } from "@/lib/actions";
+import { GAME_TYPE_LABELS, GAME_TYPES, GameType } from "@/lib/types";
 
 interface ParticipantLite {
   id: string;
@@ -19,7 +20,18 @@ interface ParticipantLite {
 }
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function nowHm() {
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2, "0");
+  const m = String(now.getMinutes()).padStart(2, "0");
+  return `${h}:${m}`;
 }
 
 function Chip({ participant }: { participant: ParticipantLite }) {
@@ -66,11 +78,13 @@ export default function NewGameForm({
   const [attendeeIds, setAttendeeIds] = useState<string[]>(
     validDefaults.length >= 2 ? validDefaults : participants.map((p) => p.id)
   );
+  const [gameType, setGameType] = useState<GameType>("hoola");
   const [pending, setPendingResult] = useState<{
     winnerId: string;
     loserId: string;
   } | null>(null);
   const [date, setDate] = useState(todayIso());
+  const [time, setTime] = useState(nowHm());
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -130,6 +144,8 @@ export default function NewGameForm({
       try {
         await createGame({
           date,
+          time,
+          gameType,
           attendeeIds,
           winnerId: pending.winnerId,
           loserId: pending.loserId,
@@ -138,10 +154,11 @@ export default function NewGameForm({
         setSuccessMsg(
           `기록 완료: ${nameMap.get(pending.loserId)} → ${nameMap.get(
             pending.winnerId
-          )}에게 1점`
+          )}에게 1점 (${GAME_TYPE_LABELS[gameType]})`
         );
         setPendingResult(null);
         setNote("");
+        setTime(nowHm());
       } catch (e) {
         setError(e instanceof Error ? e.message : "기록에 실패했습니다.");
       }
@@ -151,8 +168,28 @@ export default function NewGameForm({
   return (
     <div className="space-y-6">
       <section className="bg-white rounded-2xl border border-slate-200 p-5">
+        <h2 className="font-semibold mb-3">1. 종목 선택</h2>
+        <div className="grid grid-cols-3 gap-2">
+          {GAME_TYPES.map((gt) => (
+            <button
+              key={gt}
+              type="button"
+              onClick={() => setGameType(gt)}
+              className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                gameType === gt
+                  ? "border-slate-900 bg-slate-900 text-white"
+                  : "border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              {GAME_TYPE_LABELS[gt]}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="bg-white rounded-2xl border border-slate-200 p-5">
         <h2 className="font-semibold mb-3">
-          1. 참가자 선택 ({attendeeIds.length}명)
+          2. 참가자 선택 ({attendeeIds.length}명)
         </h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {participants.map((p) => {
@@ -184,9 +221,9 @@ export default function NewGameForm({
 
       {attendeeIds.length >= 2 && (
         <section className="bg-white rounded-2xl border border-slate-200 p-5">
-          <h2 className="font-semibold mb-1">2. 결과 입력</h2>
+          <h2 className="font-semibold mb-1">3. 결과 입력</h2>
           <p className="text-xs text-slate-400 mb-4">
-            꼴찌를 1등 위로 드래그하세요 (꼴찌가 1등에게 1점을 지급합니다).
+            Lose를 Win 위로 드래그하세요 (Lose가 Win에게 1점을 지급합니다).
           </p>
           {mounted ? (
             <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
@@ -213,17 +250,18 @@ export default function NewGameForm({
 
       {pending && (
         <section className="bg-white rounded-2xl border-2 border-slate-900 p-5 space-y-4">
-          <h2 className="font-semibold">3. 확인 및 기록</h2>
+          <h2 className="font-semibold">4. 확인 및 기록</h2>
           <p className="text-sm">
             <span className="font-semibold text-red-500">
               {nameMap.get(pending.loserId)}
             </span>
-            (꼴찌) →{" "}
+            (Lose) →{" "}
             <span className="font-semibold text-emerald-600">
               {nameMap.get(pending.winnerId)}
             </span>
-            (1등)에게{" "}
-            <span className="font-semibold">1점</span> 지급
+            (Win)에게{" "}
+            <span className="font-semibold">1점</span> 지급 ·{" "}
+            <span className="font-semibold">{GAME_TYPE_LABELS[gameType]}</span>
           </p>
           <div className="flex gap-3 flex-wrap">
             <div>
@@ -235,6 +273,15 @@ export default function NewGameForm({
                 className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
               />
             </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">시간</label>
+              <input
+                type="time"
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+              />
+            </div>
             <div className="flex-1 min-w-[160px]">
               <label className="block text-xs text-slate-500 mb-1">
                 메모 (선택)
@@ -243,7 +290,7 @@ export default function NewGameForm({
                 type="text"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder="예: 3차전"
+                placeholder="예: 재대결"
                 className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
               />
             </div>

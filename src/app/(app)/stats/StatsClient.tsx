@@ -13,11 +13,13 @@ import {
   LineChart,
   Line,
 } from "recharts";
-import { GameResult } from "@/lib/types";
+import { GAME_TYPE_LABELS, GAME_TYPES, GameResult } from "@/lib/types";
 import {
   computeParticipantStats,
   groupGamesByPeriod,
   filterGamesByPreset,
+  filterGamesByType,
+  GameTypeFilter,
   PeriodGrouping,
   RangePreset,
 } from "@/lib/stats";
@@ -43,6 +45,11 @@ const GROUPING_OPTIONS: { value: PeriodGrouping; label: string }[] = [
   { value: "year", label: "연도별" },
 ];
 
+const GAME_TYPE_OPTIONS: { value: GameTypeFilter; label: string }[] = [
+  { value: "all", label: "전체" },
+  ...GAME_TYPES.map((gt) => ({ value: gt, label: GAME_TYPE_LABELS[gt] })),
+];
+
 const PALETTE = [
   "#0f172a",
   "#059669",
@@ -65,10 +72,11 @@ export default function StatsClient({
 }) {
   const [range, setRange] = useState<RangePreset>("30d");
   const [grouping, setGrouping] = useState<PeriodGrouping>("week");
+  const [gameType, setGameType] = useState<GameTypeFilter>("all");
 
   const filteredGames = useMemo(
-    () => filterGamesByPreset(games, range),
-    [games, range]
+    () => filterGamesByType(filterGamesByPreset(games, range), gameType),
+    [games, range, gameType]
   );
 
   const stats = useMemo(
@@ -160,6 +168,24 @@ export default function StatsClient({
                 onClick={() => setGrouping(opt.value)}
                 className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
                   grouping === opt.value
+                    ? "bg-slate-900 text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <span className="text-xs text-slate-400 block mb-1">종목</span>
+          <div className="flex gap-1">
+            {GAME_TYPE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setGameType(opt.value)}
+                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
+                  gameType === opt.value
                     ? "bg-slate-900 text-white"
                     : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                 }`}
