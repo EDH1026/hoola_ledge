@@ -29,12 +29,16 @@ export interface GameResult {
   createdAt: string; // ISO datetime
 }
 
-// "waiver" is kept only so existing stored records keep parsing; new writes
-// only ever use "payment" | "donation" | "proxy_payment" (see actions.ts).
-// Read sites must normalize "waiver" to "donation" before branching on type.
+// "waiver" and "proxy_payment" are kept only so existing stored records keep
+// parsing (see actions.ts) — new writes only ever use "payment" | "donation".
+// "proxy_payment" was a short-lived v2.13 type (a payer settling someone
+// else's debt); it turned out to need no data of its own beyond a normal
+// payment (see normalizeSettlementType below), so new entries of that kind
+// are just written as "payment" instead. Read sites must normalize both
+// legacy values before branching on type.
 export type SettlementType = "payment" | "donation" | "proxy_payment" | "waiver";
 // The type new Settlement records are allowed to be written with.
-export type WritableSettlementType = "payment" | "donation" | "proxy_payment";
+export type WritableSettlementType = "payment" | "donation";
 
 export interface Settlement {
   id: string;
@@ -62,12 +66,17 @@ export interface LedgerAdjustment {
   createdAt: string; // ISO datetime
 }
 
-/** Canonicalizes a possibly-legacy SettlementType down to the current writable values. */
+/**
+ * Canonicalizes a possibly-legacy SettlementType down to the two current
+ * writable values. "proxy_payment" folds into "payment" here — not as a
+ * fallback, but because it always used payment's exact balance math
+ * (fromId += amount, toId -= amount); the label was the only thing that was
+ * ever different, and v2.13 dropped that distinction.
+ */
 export function normalizeSettlementType(
   type: SettlementType | undefined
 ): WritableSettlementType {
   if (type === "donation" || type === "waiver") return "donation";
-  if (type === "proxy_payment") return "proxy_payment";
   return "payment";
 }
 

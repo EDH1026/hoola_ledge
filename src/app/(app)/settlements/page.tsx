@@ -10,13 +10,12 @@ import SettlementsClient from "./SettlementsClient";
 
 export const dynamic = "force-dynamic";
 
-type HistoryFilter = "all" | "payment" | "donation" | "proxy_payment" | "adjustment";
+type HistoryFilter = "all" | "payment" | "donation" | "adjustment";
 
 const FILTER_OPTIONS: { value: HistoryFilter; label: string }[] = [
   { value: "all", label: "전체" },
   { value: "payment", label: "실제 정산" },
   { value: "donation", label: "기부" },
-  { value: "proxy_payment", label: "대리 변제" },
   { value: "adjustment", label: "과거 기록" },
 ];
 
@@ -68,7 +67,7 @@ export default async function SettlementsPage({
         toId: string;
         amount: number;
         note?: string;
-        type: "payment" | "donation" | "proxy_payment";
+        type: "payment" | "donation";
       }
     | {
         kind: "adjustment";

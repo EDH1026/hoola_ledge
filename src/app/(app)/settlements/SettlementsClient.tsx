@@ -108,14 +108,14 @@ export default function SettlementsClient({
       </section>
 
       <section className="bg-white rounded-2xl border border-slate-200 p-5">
-        <h2 className="font-semibold mb-1">대리 변제</h2>
+        <h2 className="font-semibold mb-1">변제</h2>
         <p className="text-xs text-slate-400 mb-4">
-          누군가(대리인)가 다른 사람(원 채무자)의 빚을 대신 갚아줄 때 기록합니다.
-          받는 사람의 잔액은 그만큼 줄고, 대리인은 그만큼을 받을 수 있게 됩니다.
-          원 채무자의 잔액 자체는 바뀌지 않습니다 — 갚아야 할 대상이 받는 사람에서
-          대리인으로 바뀔 뿐입니다.
+          위 카드에 제안된 조합과 다르게 실제로 갚았을 때(예: 다른 사람이 대신
+          내줬을 때) 자유롭게 기록합니다. 실제 정산과 계산 방식은 완전히
+          같습니다 — 굳이 누구 대신인지를 남기지 않아도, 다음에 이 화면을
+          열면 정리된 채권-채무 관계가 알아서 새로 계산되어 반영됩니다.
         </p>
-        <ProxyPaymentForm participants={participants} onRecorded={handleRecorded} />
+        <RepaymentForm participants={participants} onRecorded={handleRecorded} />
       </section>
     </div>
   );
@@ -429,26 +429,22 @@ function DonationForm({
   );
 }
 
-// The debtor (누구를 대신하여) never touches the balance math — a proxy
-// payment moves the creditor's credit down and the payer's balance up by the
-// exact same amount as a normal "payment" (see settle.ts's computeNetBalances,
-// whose non-donation branch already covers "proxy_payment"). The debtor's own
-// balance is unchanged: their obligation just moves from the creditor to the
-// payer. Since Settlement has no dedicated field for "on whose behalf", the
-// debtor's name is composed into the note text at submit time — no schema
-// change needed for that part.
-function ProxyPaymentForm({
+// Free-form counterpart to TransactionCard: same "payment" balance math
+// (fromId += amount, toId -= amount, via settle.ts's non-donation branch),
+// just not constrained to a specific simplifyDebts()-suggested pair/amount.
+// There's deliberately no "on whose behalf" field — who ultimately benefited
+// doesn't change anyone's balance (see PRD 13.7), and the next time this
+// screen loads, 정리된 채권-채무 관계 recomputes from the updated balances on
+// its own. Anyone who wants that context can just write it in the note.
+function RepaymentForm({
   participants,
   onRecorded,
 }: {
   participants: ParticipantLite[];
   onRecorded: (detail: JustRecorded) => void;
 }) {
-  const [payerId, setPayerId] = useState(participants[0]?.id ?? "");
-  const [debtorId, setDebtorId] = useState(participants[1]?.id ?? participants[0]?.id ?? "");
-  const [creditorId, setCreditorId] = useState(
-    participants[2]?.id ?? participants[1]?.id ?? participants[0]?.id ?? ""
-  );
+  const [fromId, setFromId] = useState(participants[0]?.id ?? "");
+  const [toId, setToId] = useState(participants[1]?.id ?? participants[0]?.id ?? "");
   const [amountText, setAmountText] = useState("");
   const [note, setNote] = useState("");
   const [step, setStep] = useState<"idle" | "confirm">("idle");
@@ -465,16 +461,8 @@ function ProxyPaymentForm({
 
   function goToConfirm() {
     setError(null);
-    if (payerId === creditorId) {
-      setError("대리인과 받는 사람이 같을 수 없습니다.");
-      return;
-    }
-    if (payerId === debtorId) {
-      setError("대리인은 원 채무자와 달라야 합니다 (같으면 '실제 정산'을 이용해 주세요).");
-      return;
-    }
-    if (debtorId === creditorId) {
-      setError("원 채무자와 받는 사람이 같을 수 없습니다.");
+    if (fromId === toId) {
+      setError("갚은 사람과 받은 사람이 같을 수 없습니다.");
       return;
     }
     if (!amountValid) {
@@ -488,22 +476,16 @@ function ProxyPaymentForm({
     setError(null);
     startTransition(async () => {
       try {
-        const trimmedNote = note.trim();
-        const composedNote = `${nameMap.get(debtorId)} 대신 지급${
-          trimmedNote ? ` · ${trimmedNote}` : ""
-        }`;
         const { id } = await recordSettlement({
-          fromId: payerId,
-          toId: creditorId,
+          fromId,
+          toId,
           amount,
-          type: "proxy_payment",
-          note: composedNote,
+          type: "payment",
+          note,
         });
         onRecorded({
           id,
-          summary: `${nameMap.get(payerId)} → ${nameMap.get(creditorId)} ${amount}점 (${nameMap.get(
-            debtorId
-          )} 대신, 대리 변제)`,
+          summary: `${nameMap.get(fromId)} → ${nameMap.get(toId)} ${amount}점 (변제)`,
         });
         setStep("idle");
         setAmountText("");
@@ -518,14 +500,9 @@ function ProxyPaymentForm({
     return (
       <div className="space-y-2">
         <p className="text-sm">
-          <span className="font-semibold">{nameMap.get(payerId)}</span>가{" "}
-          <span className="font-semibold">{nameMap.get(debtorId)}</span>을(를) 대신하여{" "}
-          <span className="font-semibold">{nameMap.get(creditorId)}</span>에게{" "}
-          <span className="font-semibold">{amount}점</span>을 대리 변제로 기록합니다.
-        </p>
-        <p className="text-xs text-slate-400">
-          이후 {nameMap.get(debtorId)}의 잔액은 그대로 유지되고,{" "}
-          {nameMap.get(payerId)}이(가) 그만큼을 돌려받을 수 있게 됩니다.
+          <span className="font-semibold">{nameMap.get(fromId)}</span>가{" "}
+          <span className="font-semibold">{nameMap.get(toId)}</span>에게{" "}
+          <span className="font-semibold">{amount}점</span>을 변제로 기록합니다.
         </p>
         {isLarge && (
           <WarningBanner>
@@ -539,9 +516,9 @@ function ProxyPaymentForm({
             type="button"
             onClick={handleConfirm}
             disabled={isSaving}
-            className="rounded-lg bg-sky-600 text-white text-sm font-medium px-4 py-2 hover:bg-sky-700 transition disabled:opacity-50"
+            className="rounded-lg bg-slate-900 text-white text-sm font-medium px-4 py-2 hover:bg-slate-800 transition disabled:opacity-50"
           >
-            {isSaving ? "기록 중..." : "확인 및 대리 변제 기록"}
+            {isSaving ? "기록 중..." : "확인 및 변제 기록"}
           </button>
           <button
             type="button"
@@ -560,12 +537,10 @@ function ProxyPaymentForm({
     <div className="space-y-2">
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <label className="block text-xs text-slate-500 mb-1">
-            대리인 (실제로 지불한 사람)
-          </label>
+          <label className="block text-xs text-slate-500 mb-1">갚은 사람</label>
           <select
-            value={payerId}
-            onChange={(e) => setPayerId(e.target.value)}
+            value={fromId}
+            onChange={(e) => setFromId(e.target.value)}
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-w-[120px]"
           >
             {participants.map((p) => (
@@ -576,26 +551,10 @@ function ProxyPaymentForm({
           </select>
         </div>
         <div>
-          <label className="block text-xs text-slate-500 mb-1">
-            원 채무자 (누구를 대신하여)
-          </label>
+          <label className="block text-xs text-slate-500 mb-1">받은 사람</label>
           <select
-            value={debtorId}
-            onChange={(e) => setDebtorId(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-w-[120px]"
-          >
-            {participants.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-slate-500 mb-1">받는 사람 (채권자)</label>
-          <select
-            value={creditorId}
-            onChange={(e) => setCreditorId(e.target.value)}
+            value={toId}
+            onChange={(e) => setToId(e.target.value)}
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-w-[120px]"
           >
             {participants.map((p) => (
@@ -623,14 +582,14 @@ function ProxyPaymentForm({
             type="text"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="예: 현금으로 대신 지불"
+            placeholder="예: 창민이 대신 현금으로 지불"
             className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
           />
         </div>
         <button
           type="button"
           onClick={goToConfirm}
-          className="rounded-lg bg-sky-600 text-white text-sm font-medium px-4 py-2 hover:bg-sky-700 transition"
+          className="rounded-lg bg-slate-900 text-white text-sm font-medium px-4 py-2 hover:bg-slate-800 transition"
         >
           다음
         </button>

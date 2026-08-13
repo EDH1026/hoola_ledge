@@ -30,13 +30,11 @@ export function GameTypeBadge({ gameType }: { gameType?: GameType }) {
 const SETTLEMENT_TYPE_STYLES: Record<WritableSettlementType, string> = {
   payment: "bg-emerald-50 text-emerald-700 border-emerald-200",
   donation: "bg-amber-50 text-amber-700 border-amber-200",
-  proxy_payment: "bg-sky-50 text-sky-700 border-sky-200",
 };
 
 const SETTLEMENT_TYPE_LABELS: Record<WritableSettlementType, string> = {
   payment: "실제 정산",
   donation: "기부",
-  proxy_payment: "대리 변제",
 };
 
 // Accepts the legacy "waiver" value too (normalized to "donation" before
