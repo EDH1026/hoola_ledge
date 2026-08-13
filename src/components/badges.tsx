@@ -50,6 +50,15 @@ export function SettlementTypeBadge({ type }: { type?: SettlementType }) {
   );
 }
 
+/** Marks a soft-deleted (active: false) record in admin-only views — e.g. the games list, where admins (unlike everyone else) can see inactive rows. */
+export function InactiveBadge() {
+  return (
+    <span className="inline-flex items-center rounded-full border border-slate-300 bg-slate-100 text-slate-500 px-2 py-0.5 text-xs font-medium whitespace-nowrap">
+      비활성
+    </span>
+  );
+}
+
 export function LedgerAdjustmentBadge() {
   return (
     <span className="inline-flex items-center rounded-full border border-slate-300 bg-slate-100 text-slate-600 px-2 py-0.5 text-xs font-medium whitespace-nowrap">

@@ -227,6 +227,45 @@ export async function softDeleteGame(id: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Admin-only full-field update (see actions.ts updateGame) — unlike softDeleteGame,
+ * this can touch every column including date/time and active, so an admin can
+ * correct a mis-entered record without losing its originally recorded date/time
+ * the way delete-and-recreate would (recreate always stamps the current instant).
+ */
+export async function updateGameRow(
+  id: string,
+  input: {
+    date: string;
+    time: string;
+    gameType: GameType;
+    points: number;
+    active: boolean;
+    attendeeIds: string[];
+    winnerId: string;
+    loserId: string;
+    note?: string;
+  }
+): Promise<GameResult> {
+  const { data, error } = await getSupabase()
+    .from("games")
+    .update({
+      date: input.date,
+      time: input.time,
+      game_type: input.gameType,
+      points: input.points,
+      active: input.active,
+      attendee_ids: input.attendeeIds,
+      winner_id: input.winnerId,
+      loser_id: input.loserId,
+      note: input.note ?? null,
+    })
+    .eq("id", id)
+    .select()
+    .single();
+  return mapGame(unwrap({ data, error }));
+}
+
 // ---------- Settlements ----------
 
 export async function listSettlements(): Promise<Settlement[]> {

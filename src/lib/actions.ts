@@ -8,6 +8,7 @@ import {
   getMostRecentActiveAttendeeIds,
   insertGame,
   softDeleteGame,
+  updateGameRow,
   insertSettlement,
   deleteSettlementRow,
   insertAdjustment,
@@ -65,14 +66,13 @@ export async function getPreviousAttendeeIds(): Promise<string[]> {
   return getMostRecentActiveAttendeeIds();
 }
 
-export async function createGame(input: {
-  gameType: GameType;
+/** Shared by createGame and updateGame so the two entry points can never drift apart. Returns the normalized points value (defaulted to 1). */
+function validateGameInput(input: {
   attendeeIds: string[];
   winnerId: string;
   loserId: string;
   points?: number;
-  note?: string;
-}) {
+}): number {
   if (input.attendeeIds.length < 2) {
     throw new Error("참가자는 2명 이상이어야 합니다.");
   }
@@ -89,6 +89,18 @@ export async function createGame(input: {
   if (!Number.isInteger(points) || points < 1) {
     throw new Error("점수는 1 이상의 정수여야 합니다.");
   }
+  return points;
+}
+
+export async function createGame(input: {
+  gameType: GameType;
+  attendeeIds: string[];
+  winnerId: string;
+  loserId: string;
+  points?: number;
+  note?: string;
+}) {
+  const points = validateGameInput(input);
 
   // Date/time are never taken from the client — the server's own clock at
   // record time is the source of truth (PRD 8.3), converted to Asia/Seoul
@@ -106,6 +118,60 @@ export async function createGame(input: {
     note: input.note?.trim() || undefined,
   });
 
+  revalidatePath("/games");
+  revalidatePath("/games/new");
+  revalidatePath("/settlements");
+  revalidatePath("/stats");
+  revalidatePath("/");
+}
+
+/**
+ * Admin-only correction of an existing game record (see PRD 11). Unlike
+ * createGame, date/time ARE taken from the caller as-is — this is the one
+ * deliberate exception to the "server clock is the source of truth" rule,
+ * because the whole point is to let an admin fix a record without losing its
+ * originally recorded moment the way delete-and-recreate would (recreate
+ * always re-stamps the current instant via nowInSeoul()). `active` is also
+ * writable here so a soft-deleted game can be viewed and reactivated.
+ */
+export async function updateGame(
+  id: string,
+  input: {
+    date: string;
+    time: string;
+    gameType: GameType;
+    attendeeIds: string[];
+    winnerId: string;
+    loserId: string;
+    points?: number;
+    note?: string;
+    active: boolean;
+  }
+) {
+  await requireAdmin();
+  const points = validateGameInput(input);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) {
+    throw new Error("날짜 형식이 올바르지 않습니다.");
+  }
+  if (!/^\d{2}:\d{2}$/.test(input.time)) {
+    throw new Error("시간 형식이 올바르지 않습니다.");
+  }
+
+  await updateGameRow(id, {
+    date: input.date,
+    time: input.time,
+    gameType: input.gameType,
+    points,
+    active: input.active,
+    attendeeIds: input.attendeeIds,
+    winnerId: input.winnerId,
+    loserId: input.loserId,
+    note: input.note?.trim() || undefined,
+  });
+
+  // Same set as createGame, plus /games/new: editing attendees or flipping
+  // `active` on the most recent game can change getPreviousAttendeeIds()'s
+  // result, which seeds that form's default attendee selection.
   revalidatePath("/games");
   revalidatePath("/games/new");
   revalidatePath("/settlements");
