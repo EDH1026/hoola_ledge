@@ -2,10 +2,11 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { readDB } from "@/lib/storage";
 import { computeNetBalances, simplifyDebts } from "@/lib/settle";
-import { recordSettlement, deleteSettlement } from "@/lib/actions";
+import { deleteSettlement } from "@/lib/actions";
 import { SettlementTypeBadge, LedgerAdjustmentBadge } from "@/components/badges";
 import { normalizeSettlementType } from "@/lib/types";
 import { filterByDatePreset, RangePreset } from "@/lib/stats";
+import SettlementsClient from "./SettlementsClient";
 
 export const dynamic = "force-dynamic";
 
@@ -141,147 +142,10 @@ export default async function SettlementsPage({
         </p>
       </div>
 
-      <section className="bg-white rounded-2xl border border-slate-200 p-5">
-        <h2 className="font-semibold mb-4">
-          정리된 채권-채무 관계 ({transactions.length}건)
-        </h2>
-        {transactions.length === 0 ? (
-          <p className="text-sm text-slate-400">정산할 내역이 없습니다. 모두 정산 완료 상태입니다.</p>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {transactions.map((t, i) => (
-              <div
-                key={i}
-                className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3"
-              >
-                <div className="flex items-center justify-center gap-2 text-sm">
-                  <span className="font-semibold text-red-500 truncate">
-                    {nameOf(t.fromId)}
-                  </span>
-                  <span className="text-slate-400" aria-hidden>
-                    →
-                  </span>
-                  <span className="font-semibold text-emerald-600 truncate">
-                    {nameOf(t.toId)}
-                  </span>
-                  <span className="ml-auto rounded-full bg-slate-900 text-white text-xs font-semibold px-2.5 py-1 whitespace-nowrap">
-                    {t.amount}점
-                  </span>
-                </div>
-                <form
-                  action={async (formData: FormData) => {
-                    "use server";
-                    const amount = Number(formData.get("amount"));
-                    await recordSettlement({
-                      fromId: t.fromId,
-                      toId: t.toId,
-                      amount,
-                      type: "payment",
-                    });
-                  }}
-                  className="flex items-center gap-2"
-                >
-                  <input
-                    type="number"
-                    name="amount"
-                    defaultValue={t.amount}
-                    min={1}
-                    max={t.amount}
-                    step={1}
-                    className="w-16 rounded-lg border border-slate-300 px-2 py-1 text-sm bg-white"
-                  />
-                  <button
-                    type="submit"
-                    className="rounded-lg bg-slate-900 text-white text-xs font-medium px-3 py-1.5 hover:bg-slate-800 transition whitespace-nowrap ml-auto"
-                  >
-                    정산 완료 처리
-                  </button>
-                </form>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="bg-white rounded-2xl border border-slate-200 p-5">
-        <h2 className="font-semibold mb-1">기부 기록</h2>
-        <p className="text-xs text-slate-400 mb-4">
-          계산된 채권-채무 관계와 무관하게, 누구든 원하는 상대에게 원하는
-          금액을 자유롭게 기부로 기록할 수 있습니다 (원래 갚아야 할 금액보다
-          많이 줘도 괜찮습니다).
-        </p>
-        <form
-          action={async (formData: FormData) => {
-            "use server";
-            await recordSettlement({
-              fromId: String(formData.get("fromId") ?? ""),
-              toId: String(formData.get("toId") ?? ""),
-              amount: Number(formData.get("amount")),
-              type: "donation",
-              note: String(formData.get("note") ?? ""),
-            });
-          }}
-          className="flex flex-wrap items-end gap-3"
-        >
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">주는 사람</label>
-            <select
-              name="fromId"
-              required
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-w-[120px]"
-            >
-              {participants.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">받는 사람</label>
-            <select
-              name="toId"
-              required
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-w-[120px]"
-            >
-              {participants.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">금액</label>
-            <input
-              type="number"
-              name="amount"
-              min={1}
-              step={1}
-              defaultValue={1}
-              required
-              className="w-20 rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
-            />
-          </div>
-          <div className="flex-1 min-w-[160px]">
-            <label className="block text-xs text-slate-500 mb-1">
-              메모 (선택)
-            </label>
-            <input
-              type="text"
-              name="note"
-              placeholder="예: 그냥 기분이라서"
-              className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
-            />
-          </div>
-          <button
-            type="submit"
-            className="rounded-lg bg-amber-600 text-white text-sm font-medium px-4 py-2 hover:bg-amber-700 transition"
-          >
-            기부 기록하기
-          </button>
-        </form>
-      </section>
+      <SettlementsClient
+        transactions={transactions}
+        participants={participants.map((p) => ({ id: p.id, name: p.name }))}
+      />
 
       <section className="bg-white rounded-2xl border border-slate-200 p-5">
         <h2 className="font-semibold mb-4">참가자별 순 잔액</h2>

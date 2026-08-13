@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   DndContext,
   DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
   PointerSensor,
-  TouchSensor,
   useDraggable,
   useDroppable,
   useSensor,
@@ -27,7 +28,29 @@ function CheckIcon() {
   );
 }
 
-function Chip({ participant }: { participant: ParticipantLite }) {
+function chipClassName(opts: { isOver?: boolean; isDragging?: boolean; isTapSelected?: boolean }) {
+  const { isOver, isDragging, isTapSelected } = opts;
+  return `select-none touch-none cursor-grab active:cursor-grabbing rounded-xl border-2 px-4 py-3 text-sm font-medium text-center transition
+    ${isDragging ? "opacity-40" : ""}
+    ${
+      isOver
+        ? "border-emerald-500 bg-emerald-50 scale-105"
+        : isTapSelected
+        ? "border-red-500 bg-red-50 text-red-700"
+        : "border-slate-200 bg-slate-50 hover:bg-slate-100"
+    }
+  `;
+}
+
+function Chip({
+  participant,
+  isTapSelected,
+  onTap,
+}: {
+  participant: ParticipantLite;
+  isTapSelected: boolean;
+  onTap: (id: string) => void;
+}) {
   const { attributes, listeners, setNodeRef: setDragRef, isDragging } =
     useDraggable({ id: participant.id });
   const { setNodeRef: setDropRef, isOver } = useDroppable({
@@ -44,16 +67,23 @@ function Chip({ participant }: { participant: ParticipantLite }) {
       ref={setRefs}
       {...listeners}
       {...attributes}
-      className={`select-none cursor-grab active:cursor-grabbing rounded-xl border px-4 py-3 text-sm font-medium text-center transition
-        ${isDragging ? "opacity-40" : ""}
-        ${
-          isOver
-            ? "border-emerald-500 bg-emerald-50 scale-105"
-            : "border-slate-200 bg-slate-50 hover:bg-slate-100"
-        }
-      `}
+      onClick={() => onTap(participant.id)}
+      className={chipClassName({ isOver, isDragging, isTapSelected })}
     >
+      {isTapSelected && (
+        <span className="block text-[10px] font-semibold text-red-500 mb-0.5">
+          Lose 선택됨 · Win을 탭하세요
+        </span>
+      )}
       {participant.name}
+    </div>
+  );
+}
+
+function ChipOverlay({ name }: { name: string }) {
+  return (
+    <div className="select-none rounded-xl border-2 border-slate-900 bg-white px-4 py-3 text-sm font-medium text-center shadow-lg cursor-grabbing">
+      {name}
     </div>
   );
 }
@@ -97,12 +127,26 @@ export default function NewGameForm({
     setMounted(true);
   }, []);
 
+  // A single PointerSensor covers mouse, touch, and pen (it listens on the
+  // unified Pointer Events API) — registering TouchSensor alongside it (the
+  // previous setup) makes both sensors race to claim the same touchstart,
+  // which is exactly what broke dragging on phones. PointerSensor alone is
+  // dnd-kit's own recommended combination for "just make it work on touch".
+  // The other half of the touch fix is CSS: without `touch-action: none` on
+  // the draggable element (applied below via the `touch-none` Tailwind
+  // class), the browser's native scroll/pan gesture recognizer intercepts
+  // the touch before dnd-kit's JS ever sees pointermove events.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(TouchSensor, {
-      activationConstraint: { delay: 150, tolerance: 8 },
-    })
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
   );
+
+  // Tap-to-select fallback (Lose then Win) for when drag doesn't work or
+  // isn't practical — same activation distance means a plain tap (no
+  // movement) never triggers dnd-kit's drag, so click and drag coexist.
+  const [tapSelectedId, setTapSelectedId] = useState<string | null>(null);
+  const justDraggedRef = useRef(false);
+
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
 
   const nameMap = useMemo(
     () => new Map(participants.map((p) => [p.id, p.name])),
@@ -116,17 +160,62 @@ export default function NewGameForm({
   function toggleAttendee(id: string) {
     setPendingResult(null);
     setSuccessMsg(null);
+    setTapSelectedId(null);
     setAttendeeIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
   }
 
+  // A completed drag fires its own synthetic click right after pointerup on
+  // some browsers/touch devices; `justDraggedRef` suppresses exactly that one
+  // click so a finished drag doesn't also register as "first tap of a new
+  // selection". It self-clears on a short timeout rather than waiting for a
+  // click to consume it — otherwise, on a browser/device that never fires
+  // that trailing click, the flag would stay stuck true and silently eat the
+  // user's next *unrelated* real tap, possibly much later.
+  function armJustDraggedGuard() {
+    justDraggedRef.current = true;
+    setTimeout(() => {
+      justDraggedRef.current = false;
+    }, 300);
+  }
+
+  function handleDragStart(event: DragStartEvent) {
+    armJustDraggedGuard();
+    setActiveDragId(String(event.active.id));
+  }
+
   function handleDragEnd(event: DragEndEvent) {
+    setActiveDragId(null);
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     setError(null);
     setSuccessMsg(null);
+    setTapSelectedId(null);
     setPendingResult({ loserId: String(active.id), winnerId: String(over.id) });
+  }
+
+  function handleDragCancel() {
+    setActiveDragId(null);
+  }
+
+  function handleTap(id: string) {
+    if (justDraggedRef.current) {
+      justDraggedRef.current = false;
+      return;
+    }
+    setError(null);
+    setSuccessMsg(null);
+    if (tapSelectedId === null) {
+      setTapSelectedId(id);
+      return;
+    }
+    if (tapSelectedId === id) {
+      setTapSelectedId(null);
+      return;
+    }
+    setPendingResult({ loserId: tapSelectedId, winnerId: id });
+    setTapSelectedId(null);
   }
 
   function handleConfirm() {
@@ -227,15 +316,31 @@ export default function NewGameForm({
         <section className="bg-white rounded-2xl border border-slate-200 p-5">
           <h2 className="font-semibold mb-1">3. 결과 입력</h2>
           <p className="text-xs text-slate-400 mb-4">
-            Lose를 Win 위로 드래그하세요 (Lose가 Win에게 점수를 지급합니다).
+            드래그하거나, Lose → Win 순서로 탭하세요 (Lose가 Win에게 점수를
+            지급합니다).
           </p>
           {mounted ? (
-            <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+            <DndContext
+              sensors={sensors}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              onDragCancel={handleDragCancel}
+            >
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {selectedParticipants.map((p) => (
-                  <Chip key={p.id} participant={p} />
+                  <Chip
+                    key={p.id}
+                    participant={p}
+                    isTapSelected={tapSelectedId === p.id}
+                    onTap={handleTap}
+                  />
                 ))}
               </div>
+              <DragOverlay>
+                {activeDragId ? (
+                  <ChipOverlay name={nameMap.get(activeDragId) ?? ""} />
+                ) : null}
+              </DragOverlay>
             </DndContext>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">

@@ -153,15 +153,16 @@ export async function recordSettlement(input: {
   amount: number;
   type?: WritableSettlementType;
   note?: string;
-}) {
+}): Promise<{ id: string }> {
   if (input.amount <= 0) throw new Error("금액은 0보다 커야 합니다.");
   if (input.fromId === input.toId) {
     throw new Error("같은 사람 사이에는 기록할 수 없습니다.");
   }
 
+  const id = uuidv4();
   await mutateDB((db) => {
     db.settlements.push({
-      id: uuidv4(),
+      id,
       type: input.type ?? "payment",
       fromId: input.fromId,
       toId: input.toId,
@@ -174,6 +175,11 @@ export async function recordSettlement(input: {
 
   revalidatePath("/settlements");
   revalidatePath("/");
+
+  // Returned so the client can offer an immediate "just recorded · undo"
+  // affordance right after the confirm step (PRD 9.1.4) without needing a
+  // separate lookup.
+  return { id };
 }
 
 export async function deleteSettlement(id: string) {

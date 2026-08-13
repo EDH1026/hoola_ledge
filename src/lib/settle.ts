@@ -1,4 +1,4 @@
-import { GameResult, LedgerAdjustment, Settlement } from "./types";
+import { GameResult, LedgerAdjustment, Settlement, normalizeSettlementType } from "./types";
 import { activeGames } from "./games";
 
 /**
@@ -26,13 +26,20 @@ export function computeNetBalances(
   }
 
   for (const s of settlements) {
-    // fromId (giver) balance += amount, toId (receiver) balance -= amount.
-    // Same formula for both "payment" (paying down a real computed debt) and
-    // "donation" (freely giving value to anyone, not tied to a computed debt
-    // or capped at what's owed — see PRD 8.7). A legacy "waiver" record has
-    // the identical effect, since it's the same mechanic under an old name.
-    add(s.fromId, s.amount);
-    add(s.toId, -s.amount);
+    if (normalizeSettlementType(s.type) === "donation") {
+      // Donation moves value the same direction as a game does (Lose -> Win):
+      // the giver's balance goes DOWN and the receiver's balance goes UP.
+      // This is not debt-repayment — it's the giver freely handing their own
+      // points to someone else, uncapped and not tied to any computed debt.
+      add(s.fromId, -s.amount);
+      add(s.toId, s.amount);
+    } else {
+      // "payment": fromId (debtor) balance += amount, toId (creditor)
+      // balance -= amount — paying down a real computed debt so both sides
+      // move toward 0.
+      add(s.fromId, s.amount);
+      add(s.toId, -s.amount);
+    }
   }
 
   for (const a of adjustments) {

@@ -88,34 +88,37 @@ function assert(cond: boolean, msg: string) {
   );
 }
 
-// Case 5: a settlement (of any type) can fully cancel out an adjustment —
-// both should drop out of the balances map once net is zero.
+// Case 5: a PAYMENT (not a donation — see case 6) can fully cancel out an
+// adjustment, since payment uses the same "repay a debt" formula as before.
 {
   const adjustments: LedgerAdjustment[] = [
     { id: "adj1", fromId: "B", toId: "A", amount: 3, date: "2026-01-01", createdAt: "" },
   ];
   const settlements: Settlement[] = [
-    { id: "s1", type: "waiver", fromId: "B", toId: "A", amount: 3, date: "2026-01-02", createdAt: "" },
+    { id: "s1", type: "payment", fromId: "B", toId: "A", amount: 3, date: "2026-01-02", createdAt: "" },
   ];
   const balances = computeNetBalances([], settlements, adjustments);
   assert(!balances.has("A") && !balances.has("B"), `case5: both should net to 0, got ${JSON.stringify([...balances])}`);
 }
 
-// Case 6: a waiver has the exact same balance effect as an equal-amount payment
+// Case 6 (v2.10 direction fix): "payment" and "donation" of the identical
+// amount/pair now have OPPOSITE balance effects, and "waiver" (legacy name)
+// matches "donation", not "payment". Before this fix all three were treated
+// identically, which was the bug — a donation must move a giver's own points
+// to someone else (same direction as Lose -> Win in a game), not repay a debt.
 {
-  const games: GameResult[] = [
-    { id: "1", date: "2026-01-01", attendeeIds: ["A", "B"], winnerId: "B", loserId: "A", createdAt: "" },
-  ];
-  const paid = computeNetBalances(games, [
-    { id: "s1", type: "payment", fromId: "A", toId: "B", amount: 1, date: "2026-01-02", createdAt: "" },
+  const paid = computeNetBalances([], [
+    { id: "s1", type: "payment", fromId: "A", toId: "B", amount: 5, date: "2026-01-01", createdAt: "" },
   ]);
-  const waived = computeNetBalances(games, [
-    { id: "s2", type: "waiver", fromId: "A", toId: "B", amount: 1, date: "2026-01-02", createdAt: "" },
+  const donated = computeNetBalances([], [
+    { id: "s2", type: "donation", fromId: "A", toId: "B", amount: 5, date: "2026-01-01", createdAt: "" },
   ]);
-  assert(
-    !paid.has("A") && !paid.has("B") && !waived.has("A") && !waived.has("B"),
-    `case6: payment and waiver of the same amount should both net everyone to 0, got paid=${JSON.stringify([...paid])} waived=${JSON.stringify([...waived])}`
-  );
+  const waived = computeNetBalances([], [
+    { id: "s3", type: "waiver", fromId: "A", toId: "B", amount: 5, date: "2026-01-01", createdAt: "" },
+  ]);
+  assert(paid.get("A") === 5 && paid.get("B") === -5, `case6: payment should be A+5/B-5, got A=${paid.get("A")} B=${paid.get("B")}`);
+  assert(donated.get("A") === -5 && donated.get("B") === 5, `case6: donation should be A-5/B+5 (opposite of payment), got A=${donated.get("A")} B=${donated.get("B")}`);
+  assert(waived.get("A") === donated.get("A") && waived.get("B") === donated.get("B"), `case6: legacy waiver must match donation's direction, got waived=${JSON.stringify([...waived])} donated=${JSON.stringify([...donated])}`);
 }
 
 // Case 7: N차전 numbering — grouped by date across all game types, ordered by
@@ -179,35 +182,36 @@ function assert(cond: boolean, msg: string) {
   assert(a.wins === 1, `case9: A should have 1 win (soft-deleted game excluded), got ${a.wins}`);
 }
 
-// Case 10: legacy "waiver" and current "donation" settlement types have the
-// identical balance effect (donation is waiver renamed/generalized).
-{
-  const games: GameResult[] = [
-    { id: "1", date: "2026-01-01", attendeeIds: ["A", "B"], winnerId: "B", loserId: "A", createdAt: "" },
-  ];
-  const waived = computeNetBalances(games, [
-    { id: "s1", type: "waiver", fromId: "A", toId: "B", amount: 1, date: "2026-01-02", createdAt: "" },
-  ]);
-  const donated = computeNetBalances(games, [
-    { id: "s2", type: "donation", fromId: "A", toId: "B", amount: 1, date: "2026-01-02", createdAt: "" },
-  ]);
-  assert(
-    !waived.has("A") && !waived.has("B") && !donated.has("A") && !donated.has("B"),
-    `case10: waiver and donation of the same amount should both net everyone to 0, got waived=${JSON.stringify([...waived])} donated=${JSON.stringify([...donated])}`
-  );
-}
-
-// Case 11: donation can exceed the amount actually owed and flip the
-// balance the other way (this is the explicit "give more than you owe" case).
+// Case 10: donating to the person you already owe makes your own balance
+// WORSE, not better — proof that donation is not a repayment mechanism. A
+// owes B 1 (from the game), then A donates 1 more to B: A's debt deepens.
 {
   const games: GameResult[] = [
     { id: "1", date: "2026-01-01", attendeeIds: ["A", "B"], winnerId: "B", loserId: "A", createdAt: "" }, // A owes B 1
   ];
   const balances = computeNetBalances(games, [
-    { id: "s1", type: "donation", fromId: "A", toId: "B", amount: 3, date: "2026-01-02", createdAt: "" },
+    { id: "s1", type: "donation", fromId: "A", toId: "B", amount: 1, date: "2026-01-02", createdAt: "" },
   ]);
-  assert(balances.get("A") === 2, `case11: A should be +2 after over-donating, got ${balances.get("A")}`);
-  assert(balances.get("B") === -2, `case11: B should be -2 after receiving more than owed, got ${balances.get("B")}`);
+  assert(balances.get("A") === -2, `case10: A should be -2 (owed 1, then gave away 1 more), got ${balances.get("A")}`);
+  assert(balances.get("B") === 2, `case10: B should be +2, got ${balances.get("B")}`);
+}
+
+// Case 11: concrete worked example for an arbitrary-pair donation, unrelated
+// to any existing debt — Bob owes Carol 5 (adjustment), and Dave (who owes
+// nothing) freely donates 3 of his own points to Bob. Dave's balance should
+// drop by 3 (he gave value away) and Bob's should rise by 3 (he received it),
+// same shape as the example shown to the user for confirmation.
+{
+  const adjustments: LedgerAdjustment[] = [
+    { id: "adj1", fromId: "Bob", toId: "Carol", amount: 5, date: "2026-01-01", createdAt: "" },
+  ];
+  const settlements: Settlement[] = [
+    { id: "s1", type: "donation", fromId: "Dave", toId: "Bob", amount: 3, date: "2026-01-02", createdAt: "" },
+  ];
+  const balances = computeNetBalances([], settlements, adjustments);
+  assert(balances.get("Bob") === -2, `case11: Bob should be -2 (-5 owed, +3 donation received), got ${balances.get("Bob")}`);
+  assert(balances.get("Carol") === 5, `case11: Carol should be +5 (unaffected by the donation), got ${balances.get("Carol")}`);
+  assert(balances.get("Dave") === -3, `case11: Dave should be -3 (gave away 3 of his own points), got ${balances.get("Dave")}`);
 }
 
 // Case 12: head-to-head only attributes points to the actual winner/loser of
