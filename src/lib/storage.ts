@@ -185,8 +185,13 @@ export async function getMostRecentActiveAttendeeIds(): Promise<string[]> {
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  const row = unwrap({ data, error });
-  return row?.attendee_ids ?? [];
+  // Unlike the other functions here, a null `data` from maybeSingle() is not
+  // an error — it just means there's no previous game yet (e.g. right after
+  // the tables are first created), which is the normal state to default to
+  // an empty attendee list rather than throw. unwrap() intentionally isn't
+  // used for that reason.
+  if (error) throw new Error(error.message);
+  return data?.attendee_ids ?? [];
 }
 
 export async function insertGame(input: {
