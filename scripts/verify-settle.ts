@@ -231,4 +231,63 @@ function assert(cond: boolean, msg: string) {
   assert(!h2h.some((e) => e.opponentId === "D"), "case12: D (bystander in both games) should not appear at all");
 }
 
+// Case 13: multi-cluster minimality regression. Balances split into two
+// independent zero-sum groups — {A:+7, B:-7} needs only 1 transaction, and
+// {C:+6, D:+2, E:-8} needs only 2 — for a true minimum of 3. The old greedy
+// "largest debtor vs largest creditor" heuristic tangled the two groups
+// together (matching E against A first) and produced 4 instead.
+{
+  const balances = new Map<string, number>([
+    ["A", 7],
+    ["B", -7],
+    ["C", 6],
+    ["D", 2],
+    ["E", -8],
+  ]);
+  const txs = simplifyDebts(balances);
+  assert(txs.length === 3, `case13: expected 3 transactions (true minimum), got ${txs.length}`);
+
+  const final = new Map(balances);
+  for (const t of txs) {
+    final.set(t.fromId, (final.get(t.fromId) ?? 0) + t.amount);
+    final.set(t.toId, (final.get(t.toId) ?? 0) - t.amount);
+  }
+  assert(
+    [...final.values()].every((v) => v === 0),
+    `case13: applying all transactions should zero every balance, got ${JSON.stringify([...final])}`
+  );
+}
+
+// Case 14: every transaction simplifyDebts returns must be "clean" — the
+// amount never exceeds either party's own remaining balance at the time
+// it's issued. This guards against the exact solver's search finding a
+// mathematically-valid-but-confusing solution where someone is shown paying
+// more than they owe (and getting partially repaid elsewhere).
+{
+  const balances = new Map<string, number>([
+    ["유동", 17],
+    ["상훈", 4],
+    ["준환", -2],
+    ["창민", -4],
+    ["재훈", -4],
+    ["재익", -5],
+    ["미림", -6],
+  ]);
+  const txs = simplifyDebts(balances);
+  const remaining = new Map(balances);
+  let clean = true;
+  for (const t of txs) {
+    const fromBal = remaining.get(t.fromId) ?? 0;
+    const toBal = remaining.get(t.toId) ?? 0;
+    if (t.amount > -fromBal || t.amount > toBal) clean = false;
+    remaining.set(t.fromId, fromBal + t.amount);
+    remaining.set(t.toId, toBal - t.amount);
+  }
+  assert(clean, `case14: every transaction must be clean (no overpayment), got ${JSON.stringify(txs)}`);
+  assert(
+    [...remaining.values()].every((v) => v === 0),
+    `case14: applying all transactions should zero every balance, got ${JSON.stringify([...remaining])}`
+  );
+}
+
 console.log("Done.");
