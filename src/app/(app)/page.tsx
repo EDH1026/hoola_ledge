@@ -2,6 +2,7 @@ import Link from "next/link";
 import { readDB } from "@/lib/storage";
 import { computeParticipantStats } from "@/lib/stats";
 import { simplifiedSettlements } from "@/lib/settle";
+import { activeGames } from "@/lib/games";
 import { format } from "date-fns";
 import { GameTypeBadge } from "@/components/badges";
 
@@ -14,9 +15,10 @@ function nameOf(map: Map<string, string>, id: string) {
 export default async function DashboardPage() {
   const db = await readDB();
   const nameMap = new Map(db.participants.map((p) => [p.id, p.name]));
+  const gamesActive = activeGames(db.games);
   const stats = computeParticipantStats(db.participants, db.games);
   const topRanked = stats.filter((s) => s.appearances > 0).slice(0, 5);
-  const recentGames = [...db.games]
+  const recentGames = [...gamesActive]
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 6);
   const transactions = simplifiedSettlements(db.games, db.settlements, db.adjustments);
@@ -27,7 +29,7 @@ export default async function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold">대시보드</h1>
           <p className="text-sm text-slate-500 mt-1">
-            참가자 {db.participants.length}명 · 게임 {db.games.length}회 기록됨
+            참가자 {db.participants.length}명 · 게임 {gamesActive.length}회 기록됨
           </p>
         </div>
         <Link
@@ -55,7 +57,12 @@ export default async function DashboardPage() {
                 >
                   <span className="flex items-center gap-2">
                     <span className="w-5 text-slate-400">{i + 1}</span>
-                    <span className="font-medium">{s.name}</span>
+                    <Link
+                      href={`/stats?h2h=${s.id}`}
+                      className="font-medium hover:underline"
+                    >
+                      {s.name}
+                    </Link>
                   </span>
                   <span className="text-slate-500">
                     {s.wins}승 {s.losses}패
@@ -133,6 +140,7 @@ export default async function DashboardPage() {
                   <span className="text-red-500 font-medium">
                     {nameOf(nameMap, g.loserId)}
                   </span>
+                  <span className="text-slate-400 ml-1">· {g.points ?? 1}점</span>
                 </span>
                 <span className="text-slate-400">참가 {g.attendeeIds.length}명</span>
               </li>

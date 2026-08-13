@@ -3,15 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { v4 as uuidv4 } from "uuid";
 import { mutateDB, readDB } from "./storage";
-import { DB, GameType, SettlementType } from "./types";
+import { DB, GameType, WritableSettlementType } from "./types";
 import { requireAdmin } from "./admin";
+import { activeGames } from "./games";
+import { nowInSeoul, todayInSeoul } from "./time";
 
 function nowIso() {
   return new Date().toISOString();
-}
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
 }
 
 export async function getDBSnapshot(): Promise<DB> {
@@ -71,20 +69,18 @@ export async function setParticipantActive(id: string, active: boolean) {
 
 export async function getPreviousAttendeeIds(): Promise<string[]> {
   const db = await readDB();
-  if (db.games.length === 0) return [];
-  const sorted = [...db.games].sort((a, b) =>
-    b.createdAt.localeCompare(a.createdAt)
-  );
+  const games = activeGames(db.games);
+  if (games.length === 0) return [];
+  const sorted = [...games].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return sorted[0].attendeeIds;
 }
 
 export async function createGame(input: {
-  date?: string;
-  time?: string;
   gameType: GameType;
   attendeeIds: string[];
   winnerId: string;
   loserId: string;
+  points?: number;
   note?: string;
 }) {
   if (input.attendeeIds.length < 2) {
@@ -99,13 +95,24 @@ export async function createGame(input: {
   if (input.winnerId === input.loserId) {
     throw new Error("Win과 Lose는 같은 사람일 수 없습니다.");
   }
+  const points = input.points ?? 1;
+  if (!Number.isInteger(points) || points < 1) {
+    throw new Error("점수는 1 이상의 정수여야 합니다.");
+  }
+
+  // Date/time are never taken from the client — the server's own clock at
+  // record time is the source of truth (PRD 8.3), converted to Asia/Seoul
+  // wall-clock since that's what every displayed date/time in this app means.
+  const { date, time } = nowInSeoul();
 
   await mutateDB((db) => {
     db.games.push({
       id: uuidv4(),
-      date: input.date || todayIso(),
-      time: input.time || undefined,
+      date,
+      time,
       gameType: input.gameType,
+      points,
+      active: true,
       attendeeIds: input.attendeeIds,
       winnerId: input.winnerId,
       loserId: input.loserId,
@@ -121,9 +128,15 @@ export async function createGame(input: {
   revalidatePath("/");
 }
 
+/**
+ * Soft delete: marks the game inactive rather than removing it, so it drops
+ * out of balances/stats/lists (see activeGames() in games.ts) but the record
+ * itself survives for the admin rollback screen (see executeRollback below).
+ */
 export async function deleteGame(id: string) {
   await mutateDB((db) => {
-    db.games = db.games.filter((g) => g.id !== id);
+    const g = db.games.find((g) => g.id === id);
+    if (g) g.active = false;
   });
 
   revalidatePath("/games");
@@ -138,12 +151,12 @@ export async function recordSettlement(input: {
   fromId: string;
   toId: string;
   amount: number;
-  type?: SettlementType;
+  type?: WritableSettlementType;
   note?: string;
 }) {
-  if (input.amount <= 0) throw new Error("정산 금액은 0보다 커야 합니다.");
+  if (input.amount <= 0) throw new Error("금액은 0보다 커야 합니다.");
   if (input.fromId === input.toId) {
-    throw new Error("같은 사람에게 정산할 수 없습니다.");
+    throw new Error("같은 사람 사이에는 기록할 수 없습니다.");
   }
 
   await mutateDB((db) => {
@@ -153,7 +166,7 @@ export async function recordSettlement(input: {
       fromId: input.fromId,
       toId: input.toId,
       amount: input.amount,
-      date: todayIso(),
+      date: todayInSeoul(),
       note: input.note?.trim() || undefined,
       createdAt: nowIso(),
     });
@@ -194,7 +207,7 @@ export async function addLedgerAdjustment(input: {
       toId: input.toId,
       amount: input.amount,
       note: input.note?.trim() || undefined,
-      date: input.date || todayIso(),
+      date: input.date || todayInSeoul(),
       createdAt: nowIso(),
     });
   });
@@ -245,4 +258,56 @@ export async function deleteLedgerAdjustment(id: string) {
   revalidatePath("/adjustments");
   revalidatePath("/settlements");
   revalidatePath("/");
+}
+
+// ---------- Admin data rollback (see PRD 8.8) ----------
+// Hard-deletes games/settlements/adjustments created at or after a given
+// instant. Deliberately operates on the RAW collections (not activeGames()-
+// filtered) — a soft-deleted game created after the threshold must still be
+// counted and actually removed, not silently skipped because it's already
+// hidden from normal views. Participants are excluded by design (not a
+// time-based event stream).
+
+export interface RollbackCounts {
+  games: number;
+  settlements: number;
+  adjustments: number;
+}
+
+export async function previewRollback(thresholdIso: string): Promise<RollbackCounts> {
+  await requireAdmin();
+  const db = await readDB();
+  return {
+    games: db.games.filter((g) => g.createdAt > thresholdIso).length,
+    settlements: db.settlements.filter((s) => s.createdAt > thresholdIso).length,
+    adjustments: db.adjustments.filter((a) => a.createdAt > thresholdIso).length,
+  };
+}
+
+export async function executeRollback(thresholdIso: string): Promise<RollbackCounts> {
+  await requireAdmin();
+  const counts: RollbackCounts = { games: 0, settlements: 0, adjustments: 0 };
+
+  await mutateDB((db) => {
+    const keepGames = db.games.filter((g) => g.createdAt <= thresholdIso);
+    counts.games = db.games.length - keepGames.length;
+    db.games = keepGames;
+
+    const keepSettlements = db.settlements.filter((s) => s.createdAt <= thresholdIso);
+    counts.settlements = db.settlements.length - keepSettlements.length;
+    db.settlements = keepSettlements;
+
+    const keepAdjustments = db.adjustments.filter((a) => a.createdAt <= thresholdIso);
+    counts.adjustments = db.adjustments.length - keepAdjustments.length;
+    db.adjustments = keepAdjustments;
+  });
+
+  revalidatePath("/games");
+  revalidatePath("/settlements");
+  revalidatePath("/adjustments");
+  revalidatePath("/stats");
+  revalidatePath("/rollback");
+  revalidatePath("/");
+
+  return counts;
 }

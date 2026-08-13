@@ -1,4 +1,10 @@
-import { GAME_TYPE_LABELS, GameType, SettlementType } from "@/lib/types";
+import {
+  GAME_TYPE_LABELS,
+  GameType,
+  SettlementType,
+  WritableSettlementType,
+  normalizeSettlementType,
+} from "@/lib/types";
 
 const GAME_TYPE_STYLES: Record<GameType, string> = {
   hoola: "bg-indigo-50 text-indigo-700 border-indigo-200",
@@ -20,18 +26,20 @@ export function GameTypeBadge({ gameType }: { gameType?: GameType }) {
   );
 }
 
-const SETTLEMENT_TYPE_STYLES: Record<SettlementType, string> = {
+const SETTLEMENT_TYPE_STYLES: Record<WritableSettlementType, string> = {
   payment: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  waiver: "bg-amber-50 text-amber-700 border-amber-200",
+  donation: "bg-amber-50 text-amber-700 border-amber-200",
 };
 
-const SETTLEMENT_TYPE_LABELS: Record<SettlementType, string> = {
+const SETTLEMENT_TYPE_LABELS: Record<WritableSettlementType, string> = {
   payment: "실제 정산",
-  waiver: "탕감",
+  donation: "기부",
 };
 
+// Accepts the legacy "waiver" value too (normalized to "donation" before
+// lookup) so old settlement records still render with a correct label.
 export function SettlementTypeBadge({ type }: { type?: SettlementType }) {
-  const resolved: SettlementType = type ?? "payment";
+  const resolved = normalizeSettlementType(type);
   return (
     <span
       className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${SETTLEMENT_TYPE_STYLES[resolved]}`}

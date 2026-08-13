@@ -14,8 +14,10 @@ import {
   Line,
 } from "recharts";
 import { GAME_TYPE_LABELS, GAME_TYPES, GameResult } from "@/lib/types";
+import { activeGames } from "@/lib/games";
 import {
   computeParticipantStats,
+  computeHeadToHead,
   groupGamesByPeriod,
   filterGamesByPreset,
   filterGamesByType,
@@ -66,16 +68,21 @@ const PALETTE = [
 export default function StatsClient({
   participants,
   games,
+  initialH2hParticipantId = null,
 }: {
   participants: ParticipantLite[];
   games: GameResult[];
+  initialH2hParticipantId?: string | null;
 }) {
   const [range, setRange] = useState<RangePreset>("30d");
   const [grouping, setGrouping] = useState<PeriodGrouping>("week");
   const [gameType, setGameType] = useState<GameTypeFilter>("all");
+  const [h2hParticipantId, setH2hParticipantId] = useState<string | null>(
+    initialH2hParticipantId
+  );
 
   const filteredGames = useMemo(
-    () => filterGamesByType(filterGamesByPreset(games, range), gameType),
+    () => filterGamesByType(filterGamesByPreset(activeGames(games), range), gameType),
     [games, range, gameType]
   );
 
@@ -212,6 +219,7 @@ export default function StatsClient({
                   <th className="py-2 pr-4">패</th>
                   <th className="py-2 pr-4">승률</th>
                   <th className="py-2 pr-4">순점수</th>
+                  <th className="py-2 pr-4" />
                 </tr>
               </thead>
               <tbody>
@@ -219,7 +227,12 @@ export default function StatsClient({
                   .slice()
                   .sort((a, b) => b.netPoints - a.netPoints)
                   .map((s) => (
-                    <tr key={s.id} className="border-t border-slate-100">
+                    <tr
+                      key={s.id}
+                      className={`border-t border-slate-100 ${
+                        h2hParticipantId === s.id ? "bg-slate-50" : ""
+                      }`}
+                    >
                       <td className="py-2 pr-4 font-medium">{s.name}</td>
                       <td className="py-2 pr-4 text-slate-500">{s.appearances}</td>
                       <td className="py-2 pr-4 text-emerald-600">{s.wins}</td>
@@ -239,6 +252,21 @@ export default function StatsClient({
                         {s.netPoints > 0 ? "+" : ""}
                         {s.netPoints}
                       </td>
+                      <td className="py-2 pr-4">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setH2hParticipantId((cur) => (cur === s.id ? null : s.id))
+                          }
+                          className={`text-xs px-2 py-1 rounded-lg font-medium transition whitespace-nowrap ${
+                            h2hParticipantId === s.id
+                              ? "bg-slate-900 text-white"
+                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                          }`}
+                        >
+                          상대 전적
+                        </button>
+                      </td>
                     </tr>
                   ))}
               </tbody>
@@ -246,6 +274,14 @@ export default function StatsClient({
           </div>
         )}
       </section>
+
+      {h2hParticipantId && (
+        <HeadToHeadPanel
+          participants={participants}
+          games={filteredGames}
+          participantId={h2hParticipantId}
+        />
+      )}
 
       <section className="bg-white rounded-2xl border border-slate-200 p-5">
         <h2 className="font-semibold mb-4">참가자별 승 / 패</h2>
@@ -316,5 +352,71 @@ export default function StatsClient({
         )}
       </section>
     </div>
+  );
+}
+
+function HeadToHeadPanel({
+  participants,
+  games,
+  participantId,
+}: {
+  participants: ParticipantLite[];
+  games: GameResult[];
+  participantId: string;
+}) {
+  const entries = useMemo(
+    () => computeHeadToHead(participants, games, participantId),
+    [participants, games, participantId]
+  );
+  const name = participants.find((p) => p.id === participantId)?.name ?? "";
+
+  return (
+    <section className="bg-white rounded-2xl border border-slate-200 p-5">
+      <h2 className="font-semibold mb-1">{name}의 상대 전적</h2>
+      <p className="text-xs text-slate-400 mb-4">
+        위 기간·종목 필터가 그대로 적용됩니다. 게임의 Win/Lose로 이동한 점수만
+        집계하며, 정산·기부는 포함하지 않습니다.
+      </p>
+      {entries.length === 0 ? (
+        <p className="text-sm text-slate-400">해당 기간에 상대 전적이 없습니다.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-slate-400 text-xs">
+                <th className="py-2 pr-4">상대</th>
+                <th className="py-2 pr-4">딴 점수</th>
+                <th className="py-2 pr-4">잃은 점수</th>
+                <th className="py-2 pr-4">순점수</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((e) => {
+                const net = e.pointsWon - e.pointsLost;
+                return (
+                  <tr key={e.opponentId} className="border-t border-slate-100">
+                    <td className="py-2 pr-4 font-medium">{e.opponentName}</td>
+                    <td className="py-2 pr-4 text-emerald-600">{e.pointsWon}</td>
+                    <td className="py-2 pr-4 text-red-500">{e.pointsLost}</td>
+                    <td
+                      className={`py-2 pr-4 font-semibold ${
+                        net > 0
+                          ? "text-emerald-600"
+                          : net < 0
+                          ? "text-red-500"
+                          : "text-slate-400"
+                      }`}
+                    >
+                      {net > 0 ? "+" : ""}
+                      {net}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }

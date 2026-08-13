@@ -1,5 +1,15 @@
 import { GameResult } from "./types";
 
+/** A game is active unless explicitly soft-deleted; absent field = active (legacy records). */
+export function isActiveGame(g: GameResult): boolean {
+  return g.active !== false;
+}
+
+/** Filters out soft-deleted games. Use for anything that computes balances, stats, or display lists — NOT for the admin rollback preview, which must see soft-deleted rows too. */
+export function activeGames(games: GameResult[]): GameResult[] {
+  return games.filter(isActiveGame);
+}
+
 // Sort key for games played on the same day: by wall-clock time first (legacy
 // records with no `time` sort first, matching the createdAt-based ordering
 // they already had before this field existed), then by createdAt to break
@@ -23,7 +33,7 @@ export function computeDailySequenceNumbers(
   games: GameResult[]
 ): Map<string, number> {
   const byDate = new Map<string, GameResult[]>();
-  for (const g of games) {
+  for (const g of activeGames(games)) {
     const list = byDate.get(g.date);
     if (list) list.push(g);
     else byDate.set(g.date, [g]);

@@ -6,7 +6,7 @@ import { ADMIN_COOKIE_NAME, COOKIE_NAME, expectedToken, verifyAdminCookie } from
 // right login screen) — the server actions these pages call also enforce
 // admin auth independently via requireAdmin(), since proxy isn't a full
 // authorization solution (a server action can be invoked without the page).
-const ADMIN_ROUTES = ["/participants", "/adjustments"];
+const ADMIN_ROUTES = ["/participants", "/adjustments", "/rollback"];
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;

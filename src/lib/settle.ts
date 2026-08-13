@@ -1,9 +1,13 @@
 import { GameResult, LedgerAdjustment, Settlement } from "./types";
+import { activeGames } from "./games";
 
 /**
  * Net balance per participant.
  * Positive balance = this person is owed points (net creditor).
  * Negative balance = this person owes points (net debtor).
+ *
+ * Filters out soft-deleted (`active: false`) games internally, so every
+ * caller gets correct balances without having to remember to filter first.
  */
 export function computeNetBalances(
   games: GameResult[],
@@ -15,15 +19,18 @@ export function computeNetBalances(
     balances.set(id, (balances.get(id) ?? 0) + delta);
   };
 
-  for (const g of games) {
-    add(g.winnerId, 1); // winner is owed 1 point by the loser
-    add(g.loserId, -1);
+  for (const g of activeGames(games)) {
+    const points = g.points ?? 1; // legacy games predate the points field
+    add(g.winnerId, points); // winner is owed `points` by the loser
+    add(g.loserId, -points);
   }
 
   for (const s of settlements) {
-    // fromId actually paid (or was waived) toId `amount` points, so it
-    // reduces fromId's debt (balance moves toward 0 / positive) and reduces
-    // toId's credit. A waiver has the same balance effect as a payment.
+    // fromId (giver) balance += amount, toId (receiver) balance -= amount.
+    // Same formula for both "payment" (paying down a real computed debt) and
+    // "donation" (freely giving value to anyone, not tied to a computed debt
+    // or capped at what's owed — see PRD 8.7). A legacy "waiver" record has
+    // the identical effect, since it's the same mechanic under an old name.
     add(s.fromId, s.amount);
     add(s.toId, -s.amount);
   }

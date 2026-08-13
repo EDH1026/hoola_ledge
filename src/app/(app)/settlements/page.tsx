@@ -4,30 +4,46 @@ import { readDB } from "@/lib/storage";
 import { computeNetBalances, simplifyDebts } from "@/lib/settle";
 import { recordSettlement, deleteSettlement } from "@/lib/actions";
 import { SettlementTypeBadge, LedgerAdjustmentBadge } from "@/components/badges";
-import { SettlementType } from "@/lib/types";
+import { normalizeSettlementType } from "@/lib/types";
+import { filterByDatePreset, RangePreset } from "@/lib/stats";
 
 export const dynamic = "force-dynamic";
 
-type HistoryFilter = "all" | "payment" | "waiver" | "adjustment";
+type HistoryFilter = "all" | "payment" | "donation" | "adjustment";
 
 const FILTER_OPTIONS: { value: HistoryFilter; label: string }[] = [
   { value: "all", label: "전체" },
   { value: "payment", label: "실제 정산" },
-  { value: "waiver", label: "탕감" },
+  { value: "donation", label: "기부" },
   { value: "adjustment", label: "과거 기록" },
+];
+
+const DONATION_RANGE_OPTIONS: { value: RangePreset; label: string }[] = [
+  { value: "30d", label: "최근 30일" },
+  { value: "90d", label: "최근 90일" },
+  { value: "year", label: "올해" },
+  { value: "all", label: "전체" },
 ];
 
 export default async function SettlementsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ filter?: string }>;
+  searchParams: Promise<{ filter?: string; donationRange?: string }>;
 }) {
-  const { filter: rawFilter } = await searchParams;
+  const { filter: rawFilter, donationRange: rawDonationRange } = await searchParams;
   const filter: HistoryFilter = FILTER_OPTIONS.some((o) => o.value === rawFilter)
     ? (rawFilter as HistoryFilter)
     : "all";
+  const donationRange: RangePreset = DONATION_RANGE_OPTIONS.some(
+    (o) => o.value === rawDonationRange
+  )
+    ? (rawDonationRange as RangePreset)
+    : "all";
 
   const db = await readDB();
+  const participants = [...db.participants].sort((a, b) =>
+    a.name.localeCompare(b.name, "ko")
+  );
   const nameMap = new Map(db.participants.map((p) => [p.id, p.name]));
   const nameOf = (id: string) => nameMap.get(id) ?? "(삭제됨)";
   const balances = computeNetBalances(db.games, db.settlements, db.adjustments);
@@ -41,8 +57,27 @@ export default async function SettlementsPage({
   // so it's clear at a glance why a balance moved — adjustments carry no
   // win/lose, so they're visually tagged distinctly from real settlements.
   type HistoryRow =
-    | { kind: "settlement"; id: string; date: string; createdAt: string; fromId: string; toId: string; amount: number; note?: string; type: SettlementType }
-    | { kind: "adjustment"; id: string; date: string; createdAt: string; fromId: string; toId: string; amount: number; note?: string };
+    | {
+        kind: "settlement";
+        id: string;
+        date: string;
+        createdAt: string;
+        fromId: string;
+        toId: string;
+        amount: number;
+        note?: string;
+        type: "payment" | "donation";
+      }
+    | {
+        kind: "adjustment";
+        id: string;
+        date: string;
+        createdAt: string;
+        fromId: string;
+        toId: string;
+        amount: number;
+        note?: string;
+      };
 
   const settlementRows: HistoryRow[] = db.settlements.map((s) => ({
     kind: "settlement",
@@ -53,7 +88,7 @@ export default async function SettlementsPage({
     toId: s.toId,
     amount: s.amount,
     note: s.note,
-    type: s.type ?? "payment",
+    type: normalizeSettlementType(s.type),
   }));
   const adjustmentRows: HistoryRow[] = db.adjustments.map((a) => ({
     kind: "adjustment",
@@ -74,14 +109,35 @@ export default async function SettlementsPage({
     })
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
+  // Donation ranking: total given / received per participant, from
+  // donation-type settlements only (legacy "waiver" counts as donation too).
+  const donationSettlements = filterByDatePreset(
+    db.settlements.filter((s) => normalizeSettlementType(s.type) === "donation"),
+    donationRange
+  );
+  const given = new Map<string, number>();
+  const received = new Map<string, number>();
+  for (const s of donationSettlements) {
+    given.set(s.fromId, (given.get(s.fromId) ?? 0) + s.amount);
+    received.set(s.toId, (received.get(s.toId) ?? 0) + s.amount);
+  }
+  const topGivers = Array.from(given.entries())
+    .map(([id, amount]) => ({ id, amount, name: nameOf(id) }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 5);
+  const topReceivers = Array.from(received.entries())
+    .map(([id, amount]) => ({ id, amount, name: nameOf(id) }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 5);
+
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold">정산</h1>
         <p className="text-sm text-slate-500 mt-1">
           그동안 쌓인 채권-채무 관계를 최소 거래 수로 간소화해서 보여줍니다. 실제로
-          점수를 상품으로 교환했다면, 또는 그냥 탕감해주기로 했다면 아래에서
-          처리해주세요.
+          점수를 상품으로 교환했다면 아래에서 정산 완료 처리를, 그냥 누군가에게
+          점수를 주고 싶다면 기부로 기록해주세요.
         </p>
       </div>
 
@@ -102,8 +158,8 @@ export default async function SettlementsPage({
                   <span className="font-semibold text-red-500 truncate">
                     {nameOf(t.fromId)}
                   </span>
-                  <span className="flex items-center gap-1 text-slate-400">
-                    <span aria-hidden>→</span>
+                  <span className="text-slate-400" aria-hidden>
+                    →
                   </span>
                   <span className="font-semibold text-emerald-600 truncate">
                     {nameOf(t.toId)}
@@ -116,12 +172,11 @@ export default async function SettlementsPage({
                   action={async (formData: FormData) => {
                     "use server";
                     const amount = Number(formData.get("amount"));
-                    const type = formData.get("type") === "waiver" ? "waiver" : "payment";
                     await recordSettlement({
                       fromId: t.fromId,
                       toId: t.toId,
                       amount,
-                      type,
+                      type: "payment",
                     });
                   }}
                   className="flex items-center gap-2"
@@ -135,25 +190,97 @@ export default async function SettlementsPage({
                     step={1}
                     className="w-16 rounded-lg border border-slate-300 px-2 py-1 text-sm bg-white"
                   />
-                  <select
-                    name="type"
-                    defaultValue="payment"
-                    className="rounded-lg border border-slate-300 px-2 py-1 text-sm bg-white"
-                  >
-                    <option value="payment">실제 정산</option>
-                    <option value="waiver">탕감</option>
-                  </select>
                   <button
                     type="submit"
                     className="rounded-lg bg-slate-900 text-white text-xs font-medium px-3 py-1.5 hover:bg-slate-800 transition whitespace-nowrap ml-auto"
                   >
-                    처리
+                    정산 완료 처리
                   </button>
                 </form>
               </div>
             ))}
           </div>
         )}
+      </section>
+
+      <section className="bg-white rounded-2xl border border-slate-200 p-5">
+        <h2 className="font-semibold mb-1">기부 기록</h2>
+        <p className="text-xs text-slate-400 mb-4">
+          계산된 채권-채무 관계와 무관하게, 누구든 원하는 상대에게 원하는
+          금액을 자유롭게 기부로 기록할 수 있습니다 (원래 갚아야 할 금액보다
+          많이 줘도 괜찮습니다).
+        </p>
+        <form
+          action={async (formData: FormData) => {
+            "use server";
+            await recordSettlement({
+              fromId: String(formData.get("fromId") ?? ""),
+              toId: String(formData.get("toId") ?? ""),
+              amount: Number(formData.get("amount")),
+              type: "donation",
+              note: String(formData.get("note") ?? ""),
+            });
+          }}
+          className="flex flex-wrap items-end gap-3"
+        >
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">주는 사람</label>
+            <select
+              name="fromId"
+              required
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-w-[120px]"
+            >
+              {participants.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">받는 사람</label>
+            <select
+              name="toId"
+              required
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-w-[120px]"
+            >
+              {participants.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">금액</label>
+            <input
+              type="number"
+              name="amount"
+              min={1}
+              step={1}
+              defaultValue={1}
+              required
+              className="w-20 rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+            />
+          </div>
+          <div className="flex-1 min-w-[160px]">
+            <label className="block text-xs text-slate-500 mb-1">
+              메모 (선택)
+            </label>
+            <input
+              type="text"
+              name="note"
+              placeholder="예: 그냥 기분이라서"
+              className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+            />
+          </div>
+          <button
+            type="submit"
+            className="rounded-lg bg-amber-600 text-white text-sm font-medium px-4 py-2 hover:bg-amber-700 transition"
+          >
+            기부 기록하기
+          </button>
+        </form>
       </section>
 
       <section className="bg-white rounded-2xl border border-slate-200 p-5">
@@ -181,7 +308,7 @@ export default async function SettlementsPage({
           </ul>
         )}
         <p className="text-xs text-slate-400 mt-3">
-          양수(+)는 받을 점수, 음수(-)는 줘야 할 점수입니다. 게임·정산·
+          양수(+)는 받을 점수, 음수(-)는 줘야 할 점수입니다. 게임·정산·기부·
           <Link href="/adjustments" className="underline">
             과거 누적기록
           </Link>
@@ -191,12 +318,85 @@ export default async function SettlementsPage({
 
       <section className="bg-white rounded-2xl border border-slate-200 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h2 className="font-semibold">기부 랭킹</h2>
+          <div className="flex gap-1">
+            {DONATION_RANGE_OPTIONS.map((opt) => {
+              const params = new URLSearchParams();
+              if (filter !== "all") params.set("filter", filter);
+              if (opt.value !== "all") params.set("donationRange", opt.value);
+              const qs = params.toString();
+              return (
+                <Link
+                  key={opt.value}
+                  href={qs ? `/settlements?${qs}` : "/settlements"}
+                  className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
+                    donationRange === opt.value
+                      ? "bg-slate-900 text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  {opt.label}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <h3 className="text-xs font-medium text-slate-400 mb-2">
+              가장 많이 기부한 사람
+            </h3>
+            {topGivers.length === 0 ? (
+              <p className="text-sm text-slate-400">기부 기록이 없습니다.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {topGivers.map((g, i) => (
+                  <li key={g.id} className="flex items-center justify-between text-sm">
+                    <span className="flex items-center gap-2">
+                      <span className="w-4 text-slate-400">{i + 1}</span>
+                      <span className="font-medium">{g.name}</span>
+                    </span>
+                    <span className="font-semibold text-amber-700">{g.amount}점</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div>
+            <h3 className="text-xs font-medium text-slate-400 mb-2">
+              가장 많이 받은 사람
+            </h3>
+            {topReceivers.length === 0 ? (
+              <p className="text-sm text-slate-400">기부 기록이 없습니다.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {topReceivers.map((r, i) => (
+                  <li key={r.id} className="flex items-center justify-between text-sm">
+                    <span className="flex items-center gap-2">
+                      <span className="w-4 text-slate-400">{i + 1}</span>
+                      <span className="font-medium">{r.name}</span>
+                    </span>
+                    <span className="font-semibold text-amber-700">{r.amount}점</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="bg-white rounded-2xl border border-slate-200 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <h2 className="font-semibold">정산 & 조정 이력 ({history.length}건)</h2>
           <div className="flex gap-1">
             {FILTER_OPTIONS.map((opt) => (
               <Link
                 key={opt.value}
-                href={opt.value === "all" ? "/settlements" : `/settlements?filter=${opt.value}`}
+                href={
+                  opt.value === "all"
+                    ? "/settlements"
+                    : `/settlements?filter=${opt.value}`
+                }
                 className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
                   filter === opt.value
                     ? "bg-slate-900 text-white"

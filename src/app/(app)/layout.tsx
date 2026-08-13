@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: "/stats", label: "통계" },
   { href: "/participants", label: "참가자", admin: true },
   { href: "/adjustments", label: "과거기록", admin: true },
+  { href: "/rollback", label: "롤백", admin: true },
 ];
 
 function LockIcon() {

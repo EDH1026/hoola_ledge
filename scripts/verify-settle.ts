@@ -2,6 +2,7 @@
 // Run with: npx tsx scripts/verify-settle.ts
 import { simplifyDebts, computeNetBalances } from "../src/lib/settle";
 import { computeDailySequenceNumbers } from "../src/lib/games";
+import { computeParticipantStats, computeHeadToHead } from "../src/lib/stats";
 import { GameResult, Settlement, LedgerAdjustment } from "../src/lib/types";
 
 function assert(cond: boolean, msg: string) {
@@ -131,6 +132,99 @@ function assert(cond: boolean, msg: string) {
   assert(seq.get("timed1") === 2, `case7: 19:00 game should be 2nd, got ${seq.get("timed1")}`);
   assert(seq.get("timed2") === 3, `case7: 20:30 game should be 3rd, got ${seq.get("timed2")}`);
   assert(seq.get("otherday") === 1, `case7: different date should restart numbering, got ${seq.get("otherday")}`);
+}
+
+// Case 8: points-weighted game — a 2-point win moves ±2, not ±1, and
+// computeParticipantStats' netPoints reflects the same weighting.
+{
+  const games: GameResult[] = [
+    { id: "1", date: "2026-01-01", attendeeIds: ["A", "B"], winnerId: "A", loserId: "B", points: 2, createdAt: "" },
+  ];
+  const balances = computeNetBalances(games, []);
+  assert(balances.get("A") === 2, `case8: A should be +2, got ${balances.get("A")}`);
+  assert(balances.get("B") === -2, `case8: B should be -2, got ${balances.get("B")}`);
+
+  const stats = computeParticipantStats(
+    [
+      { id: "A", name: "A", active: true },
+      { id: "B", name: "B", active: true },
+    ],
+    games
+  );
+  const a = stats.find((s) => s.id === "A")!;
+  const b = stats.find((s) => s.id === "B")!;
+  assert(a.netPoints === 2, `case8: A netPoints should be 2, got ${a.netPoints}`);
+  assert(b.netPoints === -2, `case8: B netPoints should be -2, got ${b.netPoints}`);
+  assert(a.wins === 1 && b.losses === 1, "case8: win/loss counts still track games, not points");
+}
+
+// Case 9: a soft-deleted (active: false) game is excluded from both balances
+// and stats, while a legacy record with no `active` field at all still counts.
+{
+  const games: GameResult[] = [
+    { id: "1", date: "2026-01-01", attendeeIds: ["A", "B"], winnerId: "A", loserId: "B", active: false, createdAt: "" },
+    { id: "2", date: "2026-01-02", attendeeIds: ["A", "B"], winnerId: "A", loserId: "B", createdAt: "" }, // no `active` field
+  ];
+  const balances = computeNetBalances(games, []);
+  assert(balances.get("A") === 1, `case9: A should be +1 (only the legacy game counts), got ${balances.get("A")}`);
+
+  const stats = computeParticipantStats(
+    [
+      { id: "A", name: "A", active: true },
+      { id: "B", name: "B", active: true },
+    ],
+    games
+  );
+  const a = stats.find((s) => s.id === "A")!;
+  assert(a.wins === 1, `case9: A should have 1 win (soft-deleted game excluded), got ${a.wins}`);
+}
+
+// Case 10: legacy "waiver" and current "donation" settlement types have the
+// identical balance effect (donation is waiver renamed/generalized).
+{
+  const games: GameResult[] = [
+    { id: "1", date: "2026-01-01", attendeeIds: ["A", "B"], winnerId: "B", loserId: "A", createdAt: "" },
+  ];
+  const waived = computeNetBalances(games, [
+    { id: "s1", type: "waiver", fromId: "A", toId: "B", amount: 1, date: "2026-01-02", createdAt: "" },
+  ]);
+  const donated = computeNetBalances(games, [
+    { id: "s2", type: "donation", fromId: "A", toId: "B", amount: 1, date: "2026-01-02", createdAt: "" },
+  ]);
+  assert(
+    !waived.has("A") && !waived.has("B") && !donated.has("A") && !donated.has("B"),
+    `case10: waiver and donation of the same amount should both net everyone to 0, got waived=${JSON.stringify([...waived])} donated=${JSON.stringify([...donated])}`
+  );
+}
+
+// Case 11: donation can exceed the amount actually owed and flip the
+// balance the other way (this is the explicit "give more than you owe" case).
+{
+  const games: GameResult[] = [
+    { id: "1", date: "2026-01-01", attendeeIds: ["A", "B"], winnerId: "B", loserId: "A", createdAt: "" }, // A owes B 1
+  ];
+  const balances = computeNetBalances(games, [
+    { id: "s1", type: "donation", fromId: "A", toId: "B", amount: 3, date: "2026-01-02", createdAt: "" },
+  ]);
+  assert(balances.get("A") === 2, `case11: A should be +2 after over-donating, got ${balances.get("A")}`);
+  assert(balances.get("B") === -2, `case11: B should be -2 after receiving more than owed, got ${balances.get("B")}`);
+}
+
+// Case 12: head-to-head only attributes points to the actual winner/loser of
+// each game, even with a 4-person attendee list — bystanders get no rows.
+{
+  const games: GameResult[] = [
+    { id: "1", date: "2026-01-01", attendeeIds: ["A", "B", "C", "D"], winnerId: "A", loserId: "B", points: 2, createdAt: "" },
+    { id: "2", date: "2026-01-02", attendeeIds: ["A", "B", "C", "D"], winnerId: "C", loserId: "A", createdAt: "" },
+  ];
+  const participants = ["A", "B", "C", "D"].map((id) => ({ id, name: id, active: true }));
+  const h2h = computeHeadToHead(participants, games, "A");
+  assert(h2h.length === 2, `case12: A should have exactly 2 opponents (B, C), got ${h2h.length}`);
+  const vsB = h2h.find((e) => e.opponentId === "B");
+  const vsC = h2h.find((e) => e.opponentId === "C");
+  assert(!!vsB && vsB.pointsWon === 2 && vsB.pointsLost === 0, `case12: A vs B should be won=2/lost=0, got ${JSON.stringify(vsB)}`);
+  assert(!!vsC && vsC.pointsWon === 0 && vsC.pointsLost === 1, `case12: A vs C should be won=0/lost=1, got ${JSON.stringify(vsC)}`);
+  assert(!h2h.some((e) => e.opponentId === "D"), "case12: D (bystander in both games) should not appear at all");
 }
 
 console.log("Done.");

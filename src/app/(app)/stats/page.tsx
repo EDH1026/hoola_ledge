@@ -3,8 +3,13 @@ import StatsClient from "./StatsClient";
 
 export const dynamic = "force-dynamic";
 
-export default async function StatsPage() {
+export default async function StatsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ h2h?: string }>;
+}) {
   const db = await readDB();
+  const { h2h } = await searchParams;
 
   return (
     <div className="space-y-6">
@@ -21,6 +26,7 @@ export default async function StatsPage() {
           active: p.active,
         }))}
         games={db.games}
+        initialH2hParticipantId={h2h ?? null}
       />
     </div>
   );

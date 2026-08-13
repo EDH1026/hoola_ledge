@@ -19,19 +19,12 @@ interface ParticipantLite {
   name: string;
 }
 
-function todayIso() {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
-function nowHm() {
-  const now = new Date();
-  const h = String(now.getHours()).padStart(2, "0");
-  const m = String(now.getMinutes()).padStart(2, "0");
-  return `${h}:${m}`;
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="w-4 h-4 fill-current shrink-0">
+      <path d="M13.7 3.3a1 1 0 0 1 0 1.4l-7 7a1 1 0 0 1-1.4 0l-3-3a1 1 0 1 1 1.4-1.4L6 9.6l6.3-6.3a1 1 0 0 1 1.4 0Z" />
+    </svg>
+  );
 }
 
 function Chip({ participant }: { participant: ParticipantLite }) {
@@ -83,8 +76,7 @@ export default function NewGameForm({
     winnerId: string;
     loserId: string;
   } | null>(null);
-  const [date, setDate] = useState(todayIso());
-  const [time, setTime] = useState(nowHm());
+  const [points, setPoints] = useState(1);
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -143,22 +135,21 @@ export default function NewGameForm({
     startTransition(async () => {
       try {
         await createGame({
-          date,
-          time,
           gameType,
           attendeeIds,
           winnerId: pending.winnerId,
           loserId: pending.loserId,
+          points,
           note,
         });
         setSuccessMsg(
           `기록 완료: ${nameMap.get(pending.loserId)} → ${nameMap.get(
             pending.winnerId
-          )}에게 1점 (${GAME_TYPE_LABELS[gameType]})`
+          )}에게 ${points}점 (${GAME_TYPE_LABELS[gameType]})`
         );
         setPendingResult(null);
         setNote("");
-        setTime(nowHm());
+        setPoints(1);
       } catch (e) {
         setError(e instanceof Error ? e.message : "기록에 실패했습니다.");
       }
@@ -170,20 +161,24 @@ export default function NewGameForm({
       <section className="bg-white rounded-2xl border border-slate-200 p-5">
         <h2 className="font-semibold mb-3">1. 종목 선택</h2>
         <div className="grid grid-cols-3 gap-2">
-          {GAME_TYPES.map((gt) => (
-            <button
-              key={gt}
-              type="button"
-              onClick={() => setGameType(gt)}
-              className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                gameType === gt
-                  ? "border-slate-900 bg-slate-900 text-white"
-                  : "border-slate-200 hover:bg-slate-50"
-              }`}
-            >
-              {GAME_TYPE_LABELS[gt]}
-            </button>
-          ))}
+          {GAME_TYPES.map((gt) => {
+            const selected = gameType === gt;
+            return (
+              <button
+                key={gt}
+                type="button"
+                onClick={() => setGameType(gt)}
+                className={`flex items-center justify-center gap-1.5 rounded-lg border-2 px-3 py-2 text-sm font-medium transition ${
+                  selected
+                    ? "border-emerald-600 bg-emerald-50 text-emerald-900"
+                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                {selected && <CheckIcon />}
+                {GAME_TYPE_LABELS[gt]}
+              </button>
+            );
+          })}
         </div>
       </section>
 
@@ -197,10 +192,10 @@ export default function NewGameForm({
             return (
               <label
                 key={p.id}
-                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm cursor-pointer transition ${
+                className={`flex items-center gap-2 rounded-lg border-2 px-3 py-2 text-sm cursor-pointer transition ${
                   checked
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 hover:bg-slate-50"
+                    ? "border-emerald-600 bg-emerald-50 text-emerald-900"
+                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
                 }`}
               >
                 <input
@@ -209,6 +204,15 @@ export default function NewGameForm({
                   checked={checked}
                   onChange={() => toggleAttendee(p.id)}
                 />
+                <span
+                  className={`flex items-center justify-center w-4 h-4 rounded-full border shrink-0 ${
+                    checked
+                      ? "border-emerald-600 bg-emerald-600 text-white"
+                      : "border-slate-300 bg-white"
+                  }`}
+                >
+                  {checked && <CheckIcon />}
+                </span>
                 {p.name}
               </label>
             );
@@ -223,7 +227,7 @@ export default function NewGameForm({
         <section className="bg-white rounded-2xl border border-slate-200 p-5">
           <h2 className="font-semibold mb-1">3. 결과 입력</h2>
           <p className="text-xs text-slate-400 mb-4">
-            Lose를 Win 위로 드래그하세요 (Lose가 Win에게 1점을 지급합니다).
+            Lose를 Win 위로 드래그하세요 (Lose가 Win에게 점수를 지급합니다).
           </p>
           {mounted ? (
             <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
@@ -260,27 +264,40 @@ export default function NewGameForm({
               {nameMap.get(pending.winnerId)}
             </span>
             (Win)에게{" "}
-            <span className="font-semibold">1점</span> 지급 ·{" "}
+            <span className="font-semibold">{points}점</span> 지급 ·{" "}
             <span className="font-semibold">{GAME_TYPE_LABELS[gameType]}</span>
           </p>
-          <div className="flex gap-3 flex-wrap">
+          <div className="flex gap-3 flex-wrap items-end">
             <div>
-              <label className="block text-xs text-slate-500 mb-1">날짜</label>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-500 mb-1">시간</label>
-              <input
-                type="time"
-                value={time}
-                onChange={(e) => setTime(e.target.value)}
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
-              />
+              <label className="block text-xs text-slate-500 mb-1">점수</label>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setPoints((p) => Math.max(1, p - 1))}
+                  className="w-8 h-8 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 flex items-center justify-center"
+                  aria-label="점수 감소"
+                >
+                  −
+                </button>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={points}
+                  onChange={(e) =>
+                    setPoints(Math.max(1, Math.round(Number(e.target.value) || 1)))
+                  }
+                  className="w-14 rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-center"
+                />
+                <button
+                  type="button"
+                  onClick={() => setPoints((p) => p + 1)}
+                  className="w-8 h-8 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 flex items-center justify-center"
+                  aria-label="점수 증가"
+                >
+                  +
+                </button>
+              </div>
             </div>
             <div className="flex-1 min-w-[160px]">
               <label className="block text-xs text-slate-500 mb-1">
@@ -295,6 +312,9 @@ export default function NewGameForm({
               />
             </div>
           </div>
+          <p className="text-xs text-slate-400">
+            날짜·시간은 기록하는 지금 이 순간으로 자동 저장됩니다.
+          </p>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button
