@@ -262,6 +262,11 @@ export default function RecordsClient({
             unit="승"
           />
           <RecordCategory
+            label="하루 최다 패배"
+            tiers={records.mostLossesInOneDay}
+            unit="패"
+          />
+          <RecordCategory
             label="최다 참석 (개근왕)"
             tiers={records.mostAppearances}
             unit="회"
@@ -479,7 +484,11 @@ function formatRecordEntry(e: RecordTierEntry, unit: string, signed: boolean): s
         : ` (${e.startDate} ~ ${e.endDate})`
       : "";
   const sign = signed && e.value > 0 ? "+" : "";
-  return `${e.name} · ${sign}${e.value}${unit}${range}`;
+  // v2.19 — a blank name marks a team-level (not per-participant) entry like
+  // 하루 최다 게임수: omit the "이름 · " prefix entirely rather than render a
+  // leading separator with nothing before it.
+  const namePart = e.name ? `${e.name} · ` : "";
+  return `${namePart}${sign}${e.value}${unit}${range}`;
 }
 
 /** Renders up to 3 dense-ranked tiers (from computeRecords' topTiers), each tier possibly holding several tied entries shown as "공동 N위". `signed` prefixes positive values with "+" (for netPoints categories, where the sign matters). */

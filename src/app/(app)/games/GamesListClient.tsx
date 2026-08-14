@@ -7,9 +7,8 @@ import { isActiveGame, withinDayKey } from "@/lib/games";
 import {
   todayInSeoul,
   isWithinEditWindow,
-  BUSINESS_DAY_START_HOUR,
-  addDaysToIsoDate,
   gameWallClock,
+  businessDateFromWallClock,
 } from "@/lib/time";
 import {
   GAME_TYPE_LABELS,
@@ -19,6 +18,7 @@ import {
 } from "@/lib/types";
 import { GameTypeBadge, InactiveBadge, GameNightBadge } from "@/components/badges";
 import { computeParticipantPointTotals } from "@/lib/stats";
+import GameCalendar from "./GameCalendar";
 
 interface ParticipantLite {
   id: string;
@@ -67,6 +67,28 @@ export default function GamesListClient({
   const [year, setYear] = useState(todayYear);
   const [month, setMonth] = useState(todayMonth);
   const [day, setDay] = useState(todayDay);
+
+  // v2.19 — calendar picker: which business dates actually have a game (for
+  // highlighting) and the single exact date the three dropdowns above
+  // currently pin, if any. Soft-deleted games don't count as "there's a
+  // game here" for a non-admin, but admins see them in `games` too (see
+  // games/page.tsx) — matching activeFiltered's own active-only contract
+  // keeps the calendar's highlighting consistent with what "회" the summary
+  // line above actually counts.
+  const gameDates = useMemo(
+    () => new Set(games.filter(isActiveGame).map((g) => g.date)),
+    [games]
+  );
+  const selectedDate: string | null =
+    year !== "all" && month !== "all" && day !== "all"
+      ? `${year}-${String(Number(month)).padStart(2, "0")}-${String(Number(day)).padStart(2, "0")}`
+      : null;
+  function selectExactDate(date: string) {
+    setYear(date.slice(0, 4));
+    setMonth(String(Number(date.slice(5, 7))));
+    setDay(String(Number(date.slice(8, 10))));
+  }
+
   const [isPending, startTransition] = useTransition();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<{ id: string; message: string } | null>(null);
@@ -185,6 +207,13 @@ export default function GamesListClient({
           </div>
         </div>
       </section>
+
+      <GameCalendar
+        gameDates={gameDates}
+        selectedDate={selectedDate}
+        onSelectDate={selectExactDate}
+        today={today}
+      />
 
       <section className="bg-white rounded-2xl border border-slate-200 p-4">
         <h2 className="text-sm font-semibold mb-3">이 구간 인별 점수</h2>
@@ -446,17 +475,28 @@ function GameEditForm({
   const [loserId, setLoserId] = useState(game.loserId);
   const [points, setPoints] = useState(game.points ?? 1);
   const [note, setNote] = useState(game.note ?? "");
-  const [date, setDate] = useState(game.date);
+  // v2.19 (PRD §22.4 revised) — the admin now types the *real calendar*
+  // date/time the game was actually played, not the stored business date.
+  // `calendarDate` is seeded from the recovered wall clock (v2.18's
+  // gameWallClock) rather than game.date directly, so re-opening this form
+  // shows what actually happened, not the grouping key. The business date
+  // that gets saved is derived from (calendarDate, time) at save time —
+  // see businessDate below — so the admin never has to think about the
+  // 06:00 boundary themselves.
+  const [calendarDate, setCalendarDate] = useState(
+    gameWallClock(game.date, game.time).date
+  );
   const [time, setTime] = useState(game.time ?? "00:00");
   const [active, setActive] = useState(game.active !== false);
   const [step, setStep] = useState<"form" | "confirm">("form");
   const [error, setError] = useState<string | null>(null);
   const [isSaving, startTransition] = useTransition();
-  // v2.17 §20.3 — one-off dismissal for the business-day warning below, so
-  // clicking its "맞추기" button doesn't immediately re-trigger the same
-  // warning against the now-shifted date. Any further edit to `time` clears
-  // it, so a genuinely new value gets checked fresh.
-  const [businessDayFixApplied, setBusinessDayFixApplied] = useState(false);
+
+  // The value actually saved as `date` — derived automatically from what the
+  // admin typed, never entered directly. A time before 06:00 means this
+  // rolls back to the previous calendar day (PRD §22.1's 06:00 boundary).
+  const businessDate = businessDateFromWallClock(calendarDate, time);
+  const crossesToPreviousBusinessDay = businessDate !== calendarDate;
 
   const selectableAttendees = participants.filter((p) => attendeeIds.includes(p.id));
 
@@ -481,7 +521,7 @@ function GameEditForm({
     if (winnerId === loserId) return "Win과 Lose는 같은 사람일 수 없습니다.";
     if (!Number.isInteger(points) || points < 1)
       return "점수는 1 이상의 정수여야 합니다.";
-    if (!date) return "날짜를 입력해 주세요.";
+    if (!calendarDate) return "날짜를 입력해 주세요.";
     if (!time) return "시간을 입력해 주세요.";
     return null;
   }
@@ -510,8 +550,10 @@ function GameEditForm({
           // date/time/active are only ever meaningful from an admin caller —
           // the server ignores them from anyone else anyway (PRD 15.4), but
           // leaving them out here for non-admins keeps this call site honest
-          // about what it's actually allowed to change.
-          ...(isAdmin ? { date, time, active } : {}),
+          // about what it's actually allowed to change. `date` is the
+          // *derived* business date (businessDate), not the calendarDate the
+          // admin typed — see the comment on businessDate above.
+          ...(isAdmin ? { date: businessDate, time, active } : {}),
         });
         onSaved();
       } catch (e) {
@@ -521,25 +563,9 @@ function GameEditForm({
     });
   }
 
-  const dateOrTimeChanged = date !== game.date || time !== (game.time ?? "00:00");
-
-  // v2.17 §20.3 — this can't know whether `date` already *is* the intended
-  // business date (there's no separate "calendar date" field to compare
-  // against once the admin is typing both by hand), so it's a nudge on every
-  // pre-06:00 time, not a hard rule: PRD §11's admin discretion stays
-  // untouched, and the backfill script (src/lib/backfill.ts) already treats
-  // any date/time combo it wouldn't have produced itself as intentional.
-  const timeHour = Number(time.slice(0, 2));
-  const isPreBusinessDayBoundary = !Number.isNaN(timeHour) && timeHour < BUSINESS_DAY_START_HOUR;
-  const impliedBusinessDate = addDaysToIsoDate(date, -1);
-  const showBusinessDayWarning =
-    isAdmin && isPreBusinessDayBoundary && !businessDayFixApplied;
-
-  // v2.18 (PRD §22.4) — the date/time inputs above edit the *stored* values
-  // (business day + wall clock) directly, which is correct for what gets
-  // saved. But "날짜 2026-08-14 / 시간 01:00" reads as a contradiction unless
-  // it's spelled out that the real calendar moment is the next day.
-  const editedWallClock = gameWallClock(date, time);
+  const initialCalendarDate = gameWallClock(game.date, game.time).date;
+  const dateOrTimeChanged =
+    calendarDate !== initialCalendarDate || time !== (game.time ?? "00:00");
 
   if (step === "confirm") {
     return (
@@ -560,11 +586,11 @@ function GameEditForm({
         <DiffRow label="메모" before={game.note || "(없음)"} after={note.trim() || "(없음)"} />
         {isAdmin && (
           <>
-            <DiffRow label="날짜" before={game.date} after={date} />
+            <DiffRow label="날짜" before={initialCalendarDate} after={calendarDate} />
             <DiffRow label="시간" before={game.time || "(없음)"} after={time} />
-            {editedWallClock.crossedMidnight && (
+            {crossesToPreviousBusinessDay && (
               <p className="text-xs text-indigo-700 pl-16">
-                → 실제 시각: {editedWallClock.date} {time}
+                → 영업일 기준으로는 전날({businessDate})의 게임으로 저장됩니다.
               </p>
             )}
             <DiffRow label="상태" before={game.active !== false ? "활성" : "비활성"} after={active ? "활성" : "비활성"} />
@@ -575,24 +601,6 @@ function GameEditForm({
           <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
             날짜·시간을 바꾸면 N차전 번호와 날짜 필터 결과가 달라질 수 있습니다.
           </p>
-        )}
-        {showBusinessDayWarning && (
-          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-1.5">
-            <p>
-              시각이 06:00 이전입니다. 이 앱은 06:00~다음 날 06:00을 하루로
-              보므로, 이 기록은 보통 전날({impliedBusinessDate})에 속합니다.
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                setDate(impliedBusinessDate);
-                setBusinessDayFixApplied(true);
-              }}
-              className="rounded-lg bg-amber-100 text-amber-800 text-xs font-semibold px-2.5 py-1 hover:bg-amber-200 transition"
-            >
-              영업일 기준으로 맞추기 ({impliedBusinessDate})
-            </button>
-          </div>
         )}
         {error && <p className="text-sm text-red-600">{error}</p>}
 
@@ -764,12 +772,12 @@ function GameEditForm({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-slate-500 mb-1">
-                날짜 (게임일 · 06:00 기준)
+                날짜 (실제 게임한 날짜)
               </label>
               <input
                 type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
+                value={calendarDate}
+                onChange={(e) => setCalendarDate(e.target.value)}
                 className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
               />
             </div>
@@ -778,24 +786,20 @@ function GameEditForm({
               <input
                 type="time"
                 value={time}
-                onChange={(e) => {
-                  setTime(e.target.value);
-                  setBusinessDayFixApplied(false);
-                }}
+                onChange={(e) => setTime(e.target.value)}
                 className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
               />
             </div>
           </div>
           <p className="text-xs text-amber-700">
-            ※ 날짜·시간은 이 관리자 수정 화면에서만 바꿀 수 있어요. 하루는
-            06:00~다음 날 06:00(30:00) 기준입니다 — 예: 8/15 04:00은 8/14의
-            게임입니다. 변경하면 N차전 번호와 날짜 필터 결과가 달라질 수
-            있습니다.
+            ※ 날짜·시간은 이 관리자 수정 화면에서만 바꿀 수 있어요. 실제로
+            게임한 날짜·시간을 그대로 입력하면 됩니다 — 변경하면 N차전 번호와
+            날짜 필터 결과가 달라질 수 있습니다.
           </p>
-          {editedWallClock.crossedMidnight && (
+          {crossesToPreviousBusinessDay && (
             <p className="text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2">
-              이 기록은 실제로는 <strong>{editedWallClock.date} {time}</strong>에
-              해당합니다 (게임 밤 기준 날짜는 {date}).
+              06:00 이전 시각이라, 이 앱의 하루 기준(06:00~다음 날 06:00)으로는{" "}
+              <strong>전날 {businessDate}</strong>의 게임으로 자동 저장됩니다.
             </p>
           )}
 

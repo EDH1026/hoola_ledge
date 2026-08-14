@@ -794,6 +794,7 @@ export interface RecordsSummary {
   longestWinStreak: RecordTier[];
   longestLossStreak: RecordTier[];
   mostWinsInOneDay: RecordTier[];
+  mostLossesInOneDay: RecordTier[]; // v2.19 — symmetric counterpart to mostWinsInOneDay
   mostAppearances: RecordTier[];
   highestNetPoints: RecordTier[]; // v2.16 — career netPoints leaderboard, top
   lowestNetPoints: RecordTier[]; // v2.16 — career netPoints leaderboard, bottom
@@ -881,9 +882,12 @@ export function computeRecords(
   }
 
   const winsByDay = new Map<string, number>(); // key: winnerId|date
+  const lossesByDay = new Map<string, number>(); // key: loserId|date
   for (const g of active) {
-    const key = `${g.winnerId}|${g.date}`;
-    winsByDay.set(key, (winsByDay.get(key) ?? 0) + 1);
+    const winKey = `${g.winnerId}|${g.date}`;
+    winsByDay.set(winKey, (winsByDay.get(winKey) ?? 0) + 1);
+    const lossKey = `${g.loserId}|${g.date}`;
+    lossesByDay.set(lossKey, (lossesByDay.get(lossKey) ?? 0) + 1);
   }
   const dayWinEntries: RecordTierEntry[] = Array.from(winsByDay.entries()).map(
     ([key, wins]) => {
@@ -891,32 +895,49 @@ export function computeRecords(
       return { id, name: nameFor(id), value: wins, startDate: date, endDate: date };
     }
   );
+  const dayLossEntries: RecordTierEntry[] = Array.from(lossesByDay.entries()).map(
+    ([key, losses]) => {
+      const [id, date] = key.split("|");
+      return { id, name: nameFor(id), value: losses, startDate: date, endDate: date };
+    }
+  );
 
   const stats = computeParticipantStats(participants, active);
   const appearanceEntries: RecordTierEntry[] = stats
     .filter((s) => s.appearances > 0)
     .map((s) => ({ id: s.id, name: s.name, value: s.appearances }));
+  // v2.19 — netPoints is a career-cumulative total with no single date of
+  // its own, but "when was this last confirmed at this value" is exactly
+  // the date of the participant's most recent decisive game (netPoints only
+  // ever moves on a win/loss), so that's what's attached here.
   const netPointsEntries: RecordTierEntry[] = stats
     .filter((s) => s.appearances > 0)
-    .map((s) => ({ id: s.id, name: s.name, value: s.netPoints }));
+    .map((s) => {
+      const chronological = decisiveGamesForParticipant(s.id, active);
+      const lastDate = chronological.length
+        ? chronological[chronological.length - 1].date
+        : undefined;
+      return { id: s.id, name: s.name, value: s.netPoints, startDate: lastDate, endDate: lastDate };
+    });
 
   // v2.16 — a team-wide record, not a per-participant one: which single
-  // (business) day had the most games played, total. Entries carry no
-  // participant id/name — id/name are both set to the date itself so
-  // RecordCategory's shared rendering ("{name} · {value}{unit}") still works
-  // without implying any one person "holds" this record.
+  // (business) day had the most games played, total. `name` is left empty
+  // (RecordCategory/formatRecordEntry omit the "이름 · " prefix when name is
+  // blank) and the date instead goes through the same startDate/endDate
+  // parenthetical every other dated category uses, for a consistent look.
   const gamesPerDay = new Map<string, number>();
   for (const g of active) {
     gamesPerDay.set(g.date, (gamesPerDay.get(g.date) ?? 0) + 1);
   }
   const dayGameCountEntries: RecordTierEntry[] = Array.from(gamesPerDay.entries()).map(
-    ([date, count]) => ({ id: date, name: date, value: count })
+    ([date, count]) => ({ id: date, name: "", value: count, startDate: date, endDate: date })
   );
 
   return {
     longestWinStreak: topTiers(winStreakEntries),
     longestLossStreak: topTiers(lossStreakEntries),
     mostWinsInOneDay: topTiers(dayWinEntries),
+    mostLossesInOneDay: topTiers(dayLossEntries),
     mostAppearances: topTiers(appearanceEntries),
     highestNetPoints: topTiers(netPointsEntries, 3, "desc"),
     lowestNetPoints: topTiers(netPointsEntries, 3, "asc"),
