@@ -10,8 +10,10 @@ import {
   softDeleteGame,
   deleteGameRow,
   updateGameRow,
+  getGameById,
   insertSettlement,
   deleteSettlementRow,
+  getSettlementById,
   insertAdjustment,
   updateAdjustmentRow,
   deleteAdjustmentRow,
@@ -20,8 +22,8 @@ import {
   RollbackCounts,
 } from "./storage";
 import { GameType, WritableSettlementType } from "./types";
-import { requireAdmin } from "./admin";
-import { nowInSeoul, todayInSeoul } from "./time";
+import { requireAdmin, isAdminSession } from "./admin";
+import { nowInSeoul, todayInSeoul, isWithinEditWindow } from "./time";
 
 export type { RollbackCounts };
 
@@ -127,43 +129,79 @@ export async function createGame(input: {
 }
 
 /**
- * Admin-only correction of an existing game record (see PRD 11). Unlike
- * createGame, date/time ARE taken from the caller as-is — this is the one
- * deliberate exception to the "server clock is the source of truth" rule,
- * because the whole point is to let an admin fix a record without losing its
- * originally recorded moment the way delete-and-recreate would (recreate
- * always re-stamps the current instant via nowInSeoul()). `active` is also
- * writable here so a soft-deleted game can be viewed and reactivated.
+ * Correction of an existing game record (see PRD 11, extended by PRD 15 to
+ * non-admins). Branches on session:
+ *  - Admin: behaves exactly as before — date/time/active are taken from the
+ *    caller as-is (the one deliberate exception to "server clock is the
+ *    source of truth", so an admin can fix a record without losing its
+ *    originally recorded moment the way delete-and-recreate would), no time
+ *    limit.
+ *  - Non-admin: date/time/active are NEVER taken from the caller, no matter
+ *    what the client sends — they're always carried over from the existing
+ *    row, so tampering with the request can't bypass this. Only allowed
+ *    within EDIT_WINDOW_MS of the row's createdAt, and only for rows that
+ *    are still active (a soft-deleted row is admin territory only, same as
+ *    it never being shown to non-admins in the first place).
  */
 export async function updateGame(
   id: string,
   input: {
-    date: string;
-    time: string;
     gameType: GameType;
     attendeeIds: string[];
     winnerId: string;
     loserId: string;
     points?: number;
     note?: string;
-    active: boolean;
+    date?: string;
+    time?: string;
+    active?: boolean;
   }
 ) {
-  await requireAdmin();
+  const existing = await getGameById(id);
+  if (!existing) throw new Error("게임 기록을 찾을 수 없습니다.");
+
   const points = validateGameInput(input);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) {
-    throw new Error("날짜 형식이 올바르지 않습니다.");
-  }
-  if (!/^\d{2}:\d{2}$/.test(input.time)) {
-    throw new Error("시간 형식이 올바르지 않습니다.");
+  const admin = await isAdminSession();
+
+  let date: string;
+  let time: string;
+  let active: boolean;
+
+  if (admin) {
+    if (
+      input.date === undefined ||
+      input.time === undefined ||
+      input.active === undefined
+    ) {
+      throw new Error("날짜·시간·상태 값이 필요합니다.");
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) {
+      throw new Error("날짜 형식이 올바르지 않습니다.");
+    }
+    if (!/^\d{2}:\d{2}$/.test(input.time)) {
+      throw new Error("시간 형식이 올바르지 않습니다.");
+    }
+    date = input.date;
+    time = input.time;
+    active = input.active;
+  } else {
+    if (existing.active === false) {
+      throw new Error("비활성화된 기록은 관리자만 수정할 수 있습니다.");
+    }
+    if (!isWithinEditWindow(existing.createdAt)) {
+      throw new Error("기록 후 2시간이 지나 더 이상 수정할 수 없습니다.");
+    }
+    date = existing.date;
+    time = existing.time ?? "00:00";
+    active = true; // guaranteed above — existing.active === false already threw
   }
 
   await updateGameRow(id, {
-    date: input.date,
-    time: input.time,
+    date,
+    time,
     gameType: input.gameType,
     points,
-    active: input.active,
+    active,
     attendeeIds: input.attendeeIds,
     winnerId: input.winnerId,
     loserId: input.loserId,
@@ -184,8 +222,18 @@ export async function updateGame(
  * Soft delete: marks the game inactive rather than removing it, so it drops
  * out of balances/stats/lists (see activeGames() in games.ts) but the record
  * itself survives for the admin rollback screen (see executeRollback below).
+ * Open to non-admins since PRD 15, but only within EDIT_WINDOW_MS of the
+ * row's createdAt — admins remain unrestricted.
  */
 export async function deleteGame(id: string) {
+  if (!(await isAdminSession())) {
+    const existing = await getGameById(id);
+    if (!existing) throw new Error("게임 기록을 찾을 수 없습니다.");
+    if (!isWithinEditWindow(existing.createdAt)) {
+      throw new Error("기록 후 2시간이 지나 더 이상 삭제할 수 없습니다.");
+    }
+  }
+
   await softDeleteGame(id);
 
   revalidatePath("/games");
@@ -221,7 +269,7 @@ export async function recordSettlement(input: {
   amount: number;
   type?: WritableSettlementType;
   note?: string;
-}): Promise<{ id: string }> {
+}): Promise<{ id: string; createdAt: string }> {
   if (input.amount <= 0) throw new Error("금액은 0보다 커야 합니다.");
   if (input.fromId === input.toId) {
     throw new Error("같은 사람 사이에는 기록할 수 없습니다.");
@@ -240,12 +288,26 @@ export async function recordSettlement(input: {
   revalidatePath("/");
 
   // Returned so the client can offer an immediate "just recorded · undo"
-  // affordance right after the confirm step (PRD 9.1.4) without needing a
-  // separate lookup.
-  return { id: settlement.id };
+  // affordance right after the confirm step (PRD 9.1.4), good for
+  // EDIT_WINDOW_MS from this exact server-side createdAt (PRD 15), without
+  // needing a separate lookup.
+  return { id: settlement.id, createdAt: settlement.createdAt };
 }
 
+/**
+ * Open to non-admins since PRD 15, but only within EDIT_WINDOW_MS of the
+ * settlement's createdAt — admins remain unrestricted (and can always fall
+ * back to the rollback screen for anything older, PRD 15.2).
+ */
 export async function deleteSettlement(id: string) {
+  if (!(await isAdminSession())) {
+    const existing = await getSettlementById(id);
+    if (!existing) throw new Error("정산 기록을 찾을 수 없습니다.");
+    if (!isWithinEditWindow(existing.createdAt)) {
+      throw new Error("기록 후 2시간이 지나 더 이상 취소할 수 없습니다.");
+    }
+  }
+
   await deleteSettlementRow(id);
 
   revalidatePath("/settlements");

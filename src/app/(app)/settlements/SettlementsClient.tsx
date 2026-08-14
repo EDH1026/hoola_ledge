@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { recordSettlement, deleteSettlement } from "@/lib/actions";
 import { WritableSettlementType } from "@/lib/types";
+import { EDIT_WINDOW_MS } from "@/lib/time";
 
 interface ParticipantLite {
   id: string;
@@ -25,6 +26,7 @@ const LARGE_AMOUNT_THRESHOLD = 5;
 interface JustRecorded {
   id: string;
   summary: string;
+  expiresAt: number; // Date.now()-comparable ms timestamp — PRD 15.2's 2-hour undo window
 }
 
 export default function SettlementsClient({
@@ -41,34 +43,68 @@ export default function SettlementsClient({
   const nameOf = (id: string) => nameMap.get(id) ?? "(삭제됨)";
 
   const [justRecorded, setJustRecorded] = useState<JustRecorded | null>(null);
+  const [expired, setExpired] = useState(false);
   const [undoing, startUndoTransition] = useTransition();
+  const [undoError, setUndoError] = useState<string | null>(null);
 
   function handleRecorded(detail: JustRecorded) {
+    setUndoError(null);
+    setExpired(false);
     setJustRecorded(detail);
   }
 
   function handleUndo() {
     if (!justRecorded) return;
     const { id } = justRecorded;
+    setUndoError(null);
     startUndoTransition(async () => {
-      await deleteSettlement(id);
-      setJustRecorded(null);
+      try {
+        await deleteSettlement(id);
+        setJustRecorded(null);
+      } catch (e) {
+        // Can happen if the 2-hour window lapsed between the banner
+        // rendering and the click, or an admin-only edge case — either way
+        // surface it instead of leaving the button silently do nothing.
+        setUndoError(e instanceof Error ? e.message : "취소에 실패했습니다.");
+      }
     });
   }
+
+  // Flips the undo button off once its window (PRD 15.2) elapses, so it
+  // doesn't sit there enabled-looking indefinitely if this tab is just left
+  // open. `expired` (not a live Date.now() read at render time) is the only
+  // thing render looks at — the impure clock read stays inside the effect.
+  useEffect(() => {
+    if (!justRecorded) return;
+    const remaining = Math.max(0, justRecorded.expiresAt - Date.now());
+    const timer = setTimeout(() => setExpired(true), remaining);
+    return () => clearTimeout(timer);
+  }, [justRecorded]);
+
+  const canUndo = !!justRecorded && !expired;
 
   return (
     <div className="space-y-8">
       {justRecorded && (
-        <div className="rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm px-4 py-3 flex items-center justify-between gap-3">
-          <span>방금 기록됨: {justRecorded.summary}</span>
-          <button
-            type="button"
-            onClick={handleUndo}
-            disabled={undoing}
-            className="text-emerald-700 font-semibold hover:underline disabled:opacity-50 whitespace-nowrap"
-          >
-            {undoing ? "취소 중..." : "취소"}
-          </button>
+        <div className="rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm px-4 py-3 space-y-1">
+          <div className="flex items-center justify-between gap-3">
+            <span>방금 기록됨: {justRecorded.summary}</span>
+            {canUndo ? (
+              <button
+                type="button"
+                onClick={handleUndo}
+                disabled={undoing}
+                className="text-emerald-700 font-semibold hover:underline disabled:opacity-50 whitespace-nowrap"
+              >
+                {undoing ? "취소 중..." : "취소"}
+              </button>
+            ) : (
+              <span className="text-emerald-600/70 text-xs whitespace-nowrap">
+                취소 가능 시간이 지났습니다
+              </span>
+            )}
+          </div>
+          {undoError && <p className="text-xs text-red-600">{undoError}</p>}
         </div>
       )}
 
@@ -171,13 +207,17 @@ function TransactionCard({
     setError(null);
     startTransition(async () => {
       try {
-        const { id } = await recordSettlement({
+        const { id, createdAt } = await recordSettlement({
           fromId,
           toId,
           amount,
           type: "payment",
         });
-        onRecorded({ id, summary: `${fromName} → ${toName} ${amount}점 (실제 정산)` });
+        onRecorded({
+          id,
+          summary: `${fromName} → ${toName} ${amount}점 (실제 정산)`,
+          expiresAt: new Date(createdAt).getTime() + EDIT_WINDOW_MS,
+        });
         setStep("idle");
         setAmountText("");
       } catch (e) {
@@ -311,10 +351,11 @@ function DonationForm({
     startTransition(async () => {
       try {
         const type: WritableSettlementType = "donation";
-        const { id } = await recordSettlement({ fromId, toId, amount, type, note });
+        const { id, createdAt } = await recordSettlement({ fromId, toId, amount, type, note });
         onRecorded({
           id,
           summary: `${nameMap.get(fromId)} → ${nameMap.get(toId)} ${amount}점 (기부)`,
+          expiresAt: new Date(createdAt).getTime() + EDIT_WINDOW_MS,
         });
         setStep("idle");
         setAmountText("");
@@ -476,7 +517,7 @@ function RepaymentForm({
     setError(null);
     startTransition(async () => {
       try {
-        const { id } = await recordSettlement({
+        const { id, createdAt } = await recordSettlement({
           fromId,
           toId,
           amount,
@@ -486,6 +527,7 @@ function RepaymentForm({
         onRecorded({
           id,
           summary: `${nameMap.get(fromId)} → ${nameMap.get(toId)} ${amount}점 (변제)`,
+          expiresAt: new Date(createdAt).getTime() + EDIT_WINDOW_MS,
         });
         setStep("idle");
         setAmountText("");

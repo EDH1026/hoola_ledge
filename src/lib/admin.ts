@@ -11,9 +11,18 @@ import { ADMIN_COOKIE_NAME, verifyAdminCookie } from "./auth";
  * missing or stale.
  */
 export async function requireAdmin(): Promise<void> {
-  const store = await cookies();
-  const cookie = store.get(ADMIN_COOKIE_NAME)?.value;
-  if (!(await verifyAdminCookie(cookie))) {
+  if (!(await isAdminSession())) {
     throw new Error("관리자 인증이 필요합니다.");
   }
+}
+
+/**
+ * Same check as requireAdmin(), but returns a boolean instead of throwing —
+ * for actions that stay open to non-admins but need to branch behavior
+ * (e.g. v2.14's "admin: unrestricted, everyone else: 2-hour edit window").
+ */
+export async function isAdminSession(): Promise<boolean> {
+  const store = await cookies();
+  const cookie = store.get(ADMIN_COOKIE_NAME)?.value;
+  return verifyAdminCookie(cookie);
 }

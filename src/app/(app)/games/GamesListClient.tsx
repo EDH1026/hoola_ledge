@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { format } from "date-fns";
 import { deleteGame, hardDeleteGame, updateGame } from "@/lib/actions";
 import { isActiveGame, withinDayKey } from "@/lib/games";
-import { todayInSeoul } from "@/lib/time";
+import { todayInSeoul, isWithinEditWindow } from "@/lib/time";
 import {
   GAME_TYPE_LABELS,
   GAME_TYPES,
@@ -63,6 +63,7 @@ export default function GamesListClient({
   const [day, setDay] = useState(todayDay);
   const [isPending, startTransition] = useTransition();
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<{ id: string; message: string } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmHardDeleteId, setConfirmHardDeleteId] = useState<string | null>(null);
   const [isHardDeleting, startHardDeleteTransition] = useTransition();
@@ -97,8 +98,16 @@ export default function GamesListClient({
 
   function handleDelete(id: string) {
     setDeletingId(id);
+    setDeleteError(null);
     startTransition(async () => {
-      await deleteGame(id);
+      try {
+        await deleteGame(id);
+      } catch (e) {
+        setDeleteError({
+          id,
+          message: e instanceof Error ? e.message : "삭제에 실패했습니다.",
+        });
+      }
       setDeletingId(null);
     });
   }
@@ -231,6 +240,13 @@ export default function GamesListClient({
               const points = g.points ?? 1;
               const inactive = g.active === false;
               const isEditing = editingId === g.id;
+              // Non-admins only ever see active games (games/page.tsx keeps
+              // soft-deleted rows admin-only), so `!inactive` is already
+              // guaranteed there — it's included explicitly anyway so this
+              // stays correct if that upstream contract ever changes.
+              const editableByUser = isWithinEditWindow(g.createdAt);
+              const canEdit = isAdmin || (!inactive && editableByUser);
+              const canDelete = !inactive && (isAdmin || editableByUser);
               return (
                 <li key={g.id} className={`p-4 space-y-2 ${inactive ? "bg-slate-50" : ""}`}>
                   <div className="flex flex-wrap items-center gap-2 justify-between">
@@ -268,7 +284,7 @@ export default function GamesListClient({
                         </span>
                       ) : (
                         <>
-                          {isAdmin && (
+                          {canEdit && (
                             <button
                               type="button"
                               onClick={() => setEditingId(isEditing ? null : g.id)}
@@ -277,7 +293,7 @@ export default function GamesListClient({
                               {isEditing ? "닫기" : "수정"}
                             </button>
                           )}
-                          {!inactive && (
+                          {canDelete && (
                             <button
                               type="button"
                               onClick={() => handleDelete(g.id)}
@@ -296,10 +312,18 @@ export default function GamesListClient({
                               완전삭제
                             </button>
                           )}
+                          {!canEdit && !canDelete && (
+                            <span className="text-xs text-slate-300">
+                              기록 후 2시간이 지나 수정·삭제할 수 없습니다.
+                            </span>
+                          )}
                         </>
                       )}
                     </div>
                   </div>
+                  {deleteError?.id === g.id && (
+                    <p className="text-xs text-red-600">{deleteError.message}</p>
+                  )}
                   <div className={`text-sm ${inactive ? "opacity-60" : ""}`}>
                     <span className="font-semibold text-emerald-600">
                       {nameMap.get(g.winnerId) ?? "(삭제됨)"}
@@ -327,6 +351,7 @@ export default function GamesListClient({
                       game={g}
                       participants={participants}
                       nameMap={nameMap}
+                      isAdmin={isAdmin}
                       onCancel={() => setEditingId(null)}
                       onSaved={() => setEditingId(null)}
                     />
@@ -389,12 +414,14 @@ function GameEditForm({
   game,
   participants,
   nameMap,
+  isAdmin,
   onCancel,
   onSaved,
 }: {
   game: GameResult;
   participants: ParticipantLite[];
   nameMap: Map<string, string>;
+  isAdmin: boolean;
   onCancel: () => void;
   onSaved: () => void;
 }) {
@@ -454,15 +481,17 @@ function GameEditForm({
     startTransition(async () => {
       try {
         await updateGame(game.id, {
-          date,
-          time,
           gameType,
           attendeeIds,
           winnerId,
           loserId,
           points,
           note,
-          active,
+          // date/time/active are only ever meaningful from an admin caller —
+          // the server ignores them from anyone else anyway (PRD 15.4), but
+          // leaving them out here for non-admins keeps this call site honest
+          // about what it's actually allowed to change.
+          ...(isAdmin ? { date, time, active } : {}),
         });
         onSaved();
       } catch (e) {
@@ -491,11 +520,15 @@ function GameEditForm({
         />
         <DiffRow label="점수" before={String(game.points ?? 1)} after={String(points)} />
         <DiffRow label="메모" before={game.note || "(없음)"} after={note.trim() || "(없음)"} />
-        <DiffRow label="날짜" before={game.date} after={date} />
-        <DiffRow label="시간" before={game.time || "(없음)"} after={time} />
-        <DiffRow label="상태" before={game.active !== false ? "활성" : "비활성"} after={active ? "활성" : "비활성"} />
+        {isAdmin && (
+          <>
+            <DiffRow label="날짜" before={game.date} after={date} />
+            <DiffRow label="시간" before={game.time || "(없음)"} after={time} />
+            <DiffRow label="상태" before={game.active !== false ? "활성" : "비활성"} after={active ? "활성" : "비활성"} />
+          </>
+        )}
 
-        {dateOrTimeChanged && (
+        {isAdmin && dateOrTimeChanged && (
           <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
             날짜·시간을 바꾸면 N차전 번호와 날짜 필터 결과가 달라질 수 있습니다.
           </p>
@@ -665,42 +698,46 @@ function GameEditForm({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs text-slate-500 mb-1">날짜</label>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-slate-500 mb-1">시간</label>
-          <input
-            type="time"
-            value={time}
-            onChange={(e) => setTime(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
-          />
-        </div>
-      </div>
-      <p className="text-xs text-amber-700">
-        ※ 날짜·시간은 이 관리자 수정 화면에서만 바꿀 수 있어요. 변경하면 N차전
-        번호와 날짜 필터 결과가 달라질 수 있습니다.
-      </p>
+      {isAdmin && (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">날짜</label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">시간</label>
+              <input
+                type="time"
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-amber-700">
+            ※ 날짜·시간은 이 관리자 수정 화면에서만 바꿀 수 있어요. 변경하면 N차전
+            번호와 날짜 필터 결과가 달라질 수 있습니다.
+          </p>
 
-      <label className="flex items-center gap-2 text-sm text-slate-700">
-        <input
-          type="checkbox"
-          checked={active}
-          onChange={(e) => setActive(e.target.checked)}
-        />
-        활성 상태
-        <span className="text-xs text-slate-400">
-          (해제 시 삭제된 것처럼 정산·통계에서 제외됩니다)
-        </span>
-      </label>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={active}
+              onChange={(e) => setActive(e.target.checked)}
+            />
+            활성 상태
+            <span className="text-xs text-slate-400">
+              (해제 시 삭제된 것처럼 정산·통계에서 제외됩니다)
+            </span>
+          </label>
+        </>
+      )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 

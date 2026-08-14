@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { format } from "date-fns";
 import { getFullDB } from "@/lib/storage";
 import { computeNetBalances, simplifyDebts } from "@/lib/settle";
@@ -6,6 +7,8 @@ import { deleteSettlement } from "@/lib/actions";
 import { SettlementTypeBadge, LedgerAdjustmentBadge } from "@/components/badges";
 import { normalizeSettlementType } from "@/lib/types";
 import { filterByDatePreset, RangePreset } from "@/lib/stats";
+import { ADMIN_COOKIE_NAME, verifyAdminCookie } from "@/lib/auth";
+import { isWithinEditWindow } from "@/lib/time";
 import SettlementsClient from "./SettlementsClient";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +34,9 @@ export default async function SettlementsPage({
 }: {
   searchParams: Promise<{ filter?: string; donationRange?: string }>;
 }) {
+  const store = await cookies();
+  const isAdmin = await verifyAdminCookie(store.get(ADMIN_COOKIE_NAME)?.value);
+
   const { filter: rawFilter, donationRange: rawDonationRange } = await searchParams;
   const filter: HistoryFilter = FILTER_OPTIONS.some((o) => o.value === rawFilter)
     ? (rawFilter as HistoryFilter)
@@ -250,7 +256,7 @@ export default async function SettlementsPage({
       </section>
 
       <section className="bg-white rounded-2xl border border-slate-200 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
           <h2 className="font-semibold">정산 & 조정 이력 ({history.length}건)</h2>
           <div className="flex gap-1">
             {FILTER_OPTIONS.map((opt) => (
@@ -272,6 +278,9 @@ export default async function SettlementsPage({
             ))}
           </div>
         </div>
+        <p className="text-xs text-slate-400 mb-3">
+          기록 후 2시간이 지난 항목은 관리자만 취소할 수 있습니다.
+        </p>
         {history.length === 0 ? (
           <p className="text-sm text-slate-400">해당하는 이력이 없습니다.</p>
         ) : (
@@ -300,16 +309,17 @@ export default async function SettlementsPage({
                     </span>
                   )}
                 </span>
-                {row.kind === "settlement" && (
-                  <form action={deleteSettlement.bind(null, row.id)}>
-                    <button
-                      type="submit"
-                      className="text-xs text-slate-300 hover:text-red-600"
-                    >
-                      취소
-                    </button>
-                  </form>
-                )}
+                {row.kind === "settlement" &&
+                  (isAdmin || isWithinEditWindow(row.createdAt)) && (
+                    <form action={deleteSettlement.bind(null, row.id)}>
+                      <button
+                        type="submit"
+                        className="text-xs text-slate-300 hover:text-red-600"
+                      >
+                        취소
+                      </button>
+                    </form>
+                  )}
               </li>
             ))}
           </ul>

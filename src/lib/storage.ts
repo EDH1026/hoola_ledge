@@ -272,6 +272,17 @@ export async function deleteGameRow(id: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+/** Single-row lookup — used by updateGame/deleteGame (v2.14) to read `createdAt` and existing values before deciding whether a non-admin edit/delete is still within the 2-hour window. Returns null if the row doesn't exist, rather than throwing. */
+export async function getGameById(id: string): Promise<GameResult | null> {
+  const { data, error } = await getSupabase()
+    .from("games")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapGame(data) : null;
+}
+
 // ---------- Settlements ----------
 
 export async function listSettlements(): Promise<Settlement[]> {
@@ -305,6 +316,17 @@ export async function insertSettlement(input: {
 export async function deleteSettlementRow(id: string): Promise<void> {
   const { error } = await getSupabase().from("settlements").delete().eq("id", id);
   if (error) throw new Error(error.message);
+}
+
+/** Single-row lookup — used by deleteSettlement (v2.14) to read `createdAt` before deciding whether a non-admin's undo is still within the 2-hour window. Returns null if the row doesn't exist, rather than throwing. */
+export async function getSettlementById(id: string): Promise<Settlement | null> {
+  const { data, error } = await getSupabase()
+    .from("settlements")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapSettlement(data) : null;
 }
 
 // ---------- Legacy ledger adjustments ----------

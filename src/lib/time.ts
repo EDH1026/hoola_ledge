@@ -55,3 +55,16 @@ export function formatInSeoul(iso: string): string {
   const mi = String(d.getUTCMinutes()).padStart(2, "0");
   return `${y}-${mo}-${day} ${h}:${mi}`;
 }
+
+/**
+ * v2.14: grace period during which a non-admin can still edit/delete a game
+ * record or undo a settlement/donation after recording it. Plain UTC-instant
+ * math (createdAt is always a true UTC ISO instant), independent of the
+ * Asia/Seoul wall-clock formatting above.
+ */
+export const EDIT_WINDOW_MS = 2 * 60 * 60 * 1000;
+
+/** True if `createdAt` is still within the v2.14 non-admin edit window. */
+export function isWithinEditWindow(createdAt: string): boolean {
+  return Date.now() - new Date(createdAt).getTime() <= EDIT_WINDOW_MS;
+}
