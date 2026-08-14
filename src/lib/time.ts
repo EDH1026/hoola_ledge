@@ -68,3 +68,28 @@ export const EDIT_WINDOW_MS = 2 * 60 * 60 * 1000;
 export function isWithinEditWindow(createdAt: string): boolean {
   return Date.now() - new Date(createdAt).getTime() <= EDIT_WINDOW_MS;
 }
+
+/**
+ * v2.15: "2026-08-14" -> "2026-Q3". String-slice only, deliberately never
+ * `new Date(date)` — that parses as UTC midnight and can shift the date (and
+ * therefore the quarter) by a day, the same class of bug PRD §13.5 already
+ * hit with custom stats ranges. Every `.date` in this app is already a plain
+ * Asia/Seoul "yyyy-MM-dd" wall-clock string, so slicing is exact.
+ */
+export function quarterKeyOf(date: string): string {
+  const year = date.slice(0, 4);
+  const month = Number(date.slice(5, 7));
+  const quarter = Math.ceil(month / 3);
+  return `${year}-Q${quarter}`;
+}
+
+/** Current Asia/Seoul quarter key, e.g. "2026-Q3". */
+export function currentQuarterKey(): string {
+  return quarterKeyOf(todayInSeoul());
+}
+
+/** "2026-Q3" -> "2026년 3분기", for display. */
+export function formatQuarterKey(key: string): string {
+  const [year, q] = key.split("-Q");
+  return `${year}년 ${q}분기`;
+}

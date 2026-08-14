@@ -5,7 +5,7 @@ import {
   WritableSettlementType,
   normalizeSettlementType,
 } from "@/lib/types";
-import type { Tier } from "@/lib/stats";
+import type { Tier, TierPlayStyle } from "@/lib/stats";
 
 const GAME_TYPE_STYLES: Record<GameType, string> = {
   hoola: "bg-indigo-50 text-indigo-700 border-indigo-200",
@@ -105,8 +105,11 @@ export function StreakBadge({
   );
 }
 
-// Cutoffs live in computeTier() (src/lib/stats.ts); this only maps the
-// resulting tier to a label/color. Order matches rank progression low->high.
+// Cutoffs live in computeQuarterlyTiers() (src/lib/stats.ts, PRD §16); this
+// only maps the resulting tier to a label/color. Order matches rank
+// progression low->high. "master" sits between diamond (sky) and challenger
+// (purple) — fuchsia reads as a step up from sky without competing with
+// challenger's purple.
 const TIER_STYLES: Record<Tier, string> = {
   unranked: "bg-slate-50 text-slate-400 border-slate-200",
   bronze: "bg-orange-50 text-orange-800 border-orange-200",
@@ -114,25 +117,67 @@ const TIER_STYLES: Record<Tier, string> = {
   gold: "bg-amber-50 text-amber-700 border-amber-300",
   platinum: "bg-teal-50 text-teal-700 border-teal-200",
   diamond: "bg-sky-50 text-sky-700 border-sky-200",
+  master: "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200",
   challenger: "bg-purple-50 text-purple-700 border-purple-300",
 };
 
 const TIER_LABELS: Record<Tier, string> = {
-  unranked: "랭크 미배정",
+  unranked: "배치 중",
   bronze: "브론즈",
   silver: "실버",
   gold: "골드",
   platinum: "플래티넘",
   diamond: "다이아몬드",
+  master: "마스터",
   challenger: "챌린저",
 };
 
-export function TierBadge({ tier }: { tier: Tier }) {
+const TIER_BADGE_SIZES = {
+  sm: "px-1.5 py-0.5 text-[10px]",
+  md: "px-2 py-0.5 text-xs",
+} as const;
+
+export function TierBadge({
+  tier,
+  size = "md",
+}: {
+  tier: Tier;
+  size?: keyof typeof TIER_BADGE_SIZES;
+}) {
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${TIER_STYLES[tier]}`}
+      className={`inline-flex items-center rounded-full border font-semibold whitespace-nowrap ${TIER_BADGE_SIZES[size]} ${TIER_STYLES[tier]}`}
     >
       {TIER_LABELS[tier]}
+    </span>
+  );
+}
+
+// v2.15 (PRD §16.8) — win-index/loss-index-derived play style, shown next to
+// the tier badge for placement-complete participants only (null playStyle
+// means still in placement, so callers shouldn't render this at all then).
+const PLAY_STYLE_STYLES: Record<TierPlayStyle, string> = {
+  complete: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  highroller: "bg-orange-50 text-orange-700 border-orange-200",
+  grinder: "bg-slate-100 text-slate-600 border-slate-300",
+  sufferer: "bg-red-50 text-red-600 border-red-200",
+  average: "bg-slate-50 text-slate-400 border-slate-200",
+};
+
+const PLAY_STYLE_LABELS: Record<TierPlayStyle, string> = {
+  complete: "완성형",
+  highroller: "한탕형",
+  grinder: "존버형",
+  sufferer: "수난형",
+  average: "평균형",
+};
+
+export function PlayStyleBadge({ style }: { style: TierPlayStyle }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${PLAY_STYLE_STYLES[style]}`}
+    >
+      {PLAY_STYLE_LABELS[style]}
     </span>
   );
 }

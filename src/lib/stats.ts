@@ -7,7 +7,7 @@ import {
 } from "date-fns";
 import { GameResult, GameType, GAME_TYPES } from "./types";
 import { activeGames } from "./games";
-import { todayInSeoul } from "./time";
+import { todayInSeoul, quarterKeyOf } from "./time";
 
 export interface ParticipantLike {
   id: string;
@@ -349,7 +349,17 @@ export function computeTodaySummary(
   };
 }
 
-// ---------- v2.10: tier badges ----------
+// ---------- v2.15: quarterly performance-index tiers ----------
+//
+// Replaces the old win-rate-cutoff computeTier() (see PRD §16.1 for why: it
+// ignored table size, threw away "draw" games, ignored points, and had no
+// sample-size correction). The new design is a per-quarter, per-game-type
+// rating built from each game's *expected* win/loss (1/attendeeCount) rather
+// than a raw win rate — see PRD §16.2-§16.6 for the full derivation and the
+// Monte Carlo simulation that picked every constant below. Do not tune these
+// values without re-running that simulation; they're the whole point of the
+// exercise (PRD §16.6: SCALE=500 specifically trades away sharper separation
+// in low-sample game types to avoid tiers becoming a coin flip there).
 
 export type Tier =
   | "unranked"
@@ -358,23 +368,201 @@ export type Tier =
   | "gold"
   | "platinum"
   | "diamond"
+  | "master"
   | "challenger";
 
-// Needs at least this many decisive career games before a win-rate-based tier
-// means anything — otherwise a 1-0 record would misleadingly read as
-// "Challenger". Below this, a participant is "Unranked" (LoL's "placement
-// matches not complete" concept).
-const TIER_MIN_DECISIVE_GAMES = 3;
+const TIER_ORDER: Exclude<Tier, "unranked">[] = [
+  "bronze",
+  "silver",
+  "gold",
+  "platinum",
+  "diamond",
+  "master",
+  "challenger",
+];
 
-/** Assigns a LoL-style tier from career win rate. Cutoffs are an editorial judgment call, not derived from any real ranked distribution. */
-export function computeTier(winRate: number, decisiveGames: number): Tier {
-  if (decisiveGames < TIER_MIN_DECISIVE_GAMES) return "unranked";
-  if (winRate < 0.35) return "bronze";
-  if (winRate < 0.45) return "silver";
-  if (winRate < 0.55) return "gold";
-  if (winRate < 0.65) return "platinum";
-  if (winRate < 0.75) return "diamond";
-  return "challenger";
+// Bayesian-shrinkage strength: E0 = 2/tau^2 for an assumed prior stddev of
+// PERF (see §16.3) of tau=0.5. Larger E0 = more games needed before TR moves
+// far from 1000.
+export const TIER_E0 = 8;
+// Soft-reset carryover weight from the previous quarter (PRD §16.4) — picked
+// because pure reset (carryover=0) produced much worse skill/tier rank
+// correlation in low-sample game types (simulated: 0.578 -> 0.712 for
+// Citadels, 0.396 -> 0.533 for 6nimmt) while still resetting most of the way
+// each quarter.
+export const TIER_CARRYOVER = 0.35;
+// TR = 1000 +/- SCALE * perfMix * k. 500 (not a larger value) is deliberate:
+// simulated at 800 it separates thinly-sampled game types beautifully, but
+// also puts two equally-skilled players at opposite tiers 58% of the time —
+// see PRD §16.6's scale comparison table.
+export const TIER_SCALE = 500;
+// Below this effective sample weight (~9 games), a participant is "배치 중"
+// (placement) rather than assigned a tier at all. Exported so the UI can
+// render a placement progress bar (weight / TIER_MIN_WEIGHT) and the
+// verification script can assert the gate directly.
+export const TIER_MIN_WEIGHT = 2.0;
+// Six TR boundaries carving seven bins (bronze..challenger) — see the table
+// in PRD §16.5. Index i => "TR below TIER_CUTS[i] lands in TIER_ORDER[i]".
+export const TIER_CUTS = [820, 910, 1000, 1090, 1180, 1270];
+
+function tierFromTR(tr: number): Tier {
+  for (let i = 0; i < TIER_CUTS.length; i++) {
+    if (tr < TIER_CUTS[i]) return TIER_ORDER[i];
+  }
+  return TIER_ORDER[TIER_ORDER.length - 1]; // challenger
+}
+
+export type TierPlayStyle =
+  | "complete"
+  | "highroller"
+  | "grinder"
+  | "sufferer"
+  | "average";
+
+/** PRD §16.8 — win index / loss index read independently of PERF (their difference), to surface a play-style flavor tag alongside the tier. */
+function computePlayStyle(winIndex: number, lossIndex: number): TierPlayStyle {
+  if (winIndex >= 1.15 && lossIndex <= 0.85) return "complete";
+  if (winIndex >= 1.15 && lossIndex > 1.15) return "highroller";
+  if (winIndex < 0.85 && lossIndex <= 0.85) return "grinder";
+  if (winIndex < 0.85 && lossIndex > 1.15) return "sufferer";
+  return "average";
+}
+
+export interface TierRow {
+  id: string;
+  name: string;
+  tier: Tier;
+  tr: number;
+  winIndex: number; // WI = actual points won / expected points won
+  lossIndex: number; // LI = actual points lost / expected points lost (lower is better)
+  perf: number; // perfMix — WI - LI after carryover blending, this quarter's contribution to next quarter's prior
+  confidence: number; // k, 0..1 — how much this quarter's own data (vs. prior) drives TR
+  games: number; // games played (attended) this quarter, of the selected type
+  weight: number; // wTotal — effective sample weight (this quarter's E_w plus carried-over prior), what TIER_MIN_WEIGHT gates on
+  playStyle: TierPlayStyle | null; // null while still in placement
+  prevTier: Tier | null; // this participant's tier at the end of the previous quarter (in the fold sequence) — null only for their very first quarter
+}
+
+interface QuarterAccumulator {
+  expectedWins: number; // E_w = sum(1/attendeeCount) over attended games
+  expectedPoints: number; // E_p = sum(points * 1/attendeeCount) over attended games
+  wonPoints: number; // W_p = sum(points) over games this participant won
+  lostPoints: number; // L_p = sum(points) over games this participant lost
+  gameCount: number; // raw count of games attended, for display ("배치 중 (n판)")
+}
+
+function emptyAccumulator(): QuarterAccumulator {
+  return { expectedWins: 0, expectedPoints: 0, wonPoints: 0, lostPoints: 0, gameCount: 0 };
+}
+
+/**
+ * Per-quarter, per-game-type tiers built from expected-value-adjusted
+ * performance (PRD §16). `gameType: "all"` pools every game type together
+ * (the largest sample, used as the "headline" tier). Quarters are folded in
+ * chronological order so each quarter's rating carries TIER_CARRYOVER of the
+ * previous quarter's (perf, weight) as a Bayesian prior — including for
+ * participants who didn't play at all that quarter, which is what makes an
+ * inactive quarter decay TR back toward 1000 instead of freezing it.
+ *
+ * Only returns quarters that actually contain at least one (active,
+ * type-matching) game — a quarter with zero games everywhere isn't part of
+ * the fold at all, so callers default to the current quarter and fall back
+ * to the latest quarter present in the returned map.
+ */
+export function computeQuarterlyTiers(
+  participants: ParticipantLike[],
+  games: GameResult[],
+  gameType: GameTypeFilter
+): Map<string, TierRow[]> {
+  const active = activeGames(games);
+  const scoped = gameType === "all" ? active : filterGamesByType(active, gameType);
+
+  const gamesByQuarter = new Map<string, GameResult[]>();
+  for (const g of scoped) {
+    const key = quarterKeyOf(g.date);
+    const list = gamesByQuarter.get(key);
+    if (list) list.push(g);
+    else gamesByQuarter.set(key, [g]);
+  }
+  // "yyyy-Qn" sorts lexicographically in chronological order (4-digit year,
+  // single-digit quarter), so no date parsing is needed here either.
+  const quarters = Array.from(gamesByQuarter.keys()).sort();
+
+  const result = new Map<string, TierRow[]>();
+  const prior = new Map<string, { perf: number; weight: number; tier: Tier | null }>();
+
+  for (const quarter of quarters) {
+    const quarterGames = gamesByQuarter.get(quarter)!;
+
+    const acc = new Map<string, QuarterAccumulator>();
+    const ensure = (id: string): QuarterAccumulator => {
+      let a = acc.get(id);
+      if (!a) {
+        a = emptyAccumulator();
+        acc.set(id, a);
+      }
+      return a;
+    };
+    for (const g of quarterGames) {
+      const n = g.attendeeIds.length;
+      if (n === 0) continue;
+      const e = 1 / n;
+      const points = g.points ?? 1;
+      for (const attendeeId of g.attendeeIds) {
+        const a = ensure(attendeeId);
+        a.expectedWins += e;
+        a.expectedPoints += points * e;
+        a.gameCount += 1;
+      }
+      ensure(g.winnerId).wonPoints += points;
+      ensure(g.loserId).lostPoints += points;
+    }
+
+    const rows: TierRow[] = [];
+    for (const p of participants) {
+      const a = acc.get(p.id) ?? emptyAccumulator();
+      const winIndex = a.expectedPoints > 0 ? a.wonPoints / a.expectedPoints : 0;
+      const lossIndex = a.expectedPoints > 0 ? a.lostPoints / a.expectedPoints : 0;
+      const perf = winIndex - lossIndex;
+
+      const prev = prior.get(p.id);
+      const wPrev = prev?.weight ?? 0;
+      const perfPrev = prev?.perf ?? 0;
+      const prevTier = prev?.tier ?? null;
+
+      const priorWeight = TIER_CARRYOVER * wPrev;
+      const weight = a.expectedWins + priorWeight;
+      // When weight is 0 (never played, ever, as of this quarter) there's
+      // nothing to mix — perfMix stays 0 rather than dividing 0/0.
+      const perfMix =
+        weight > 0 ? (perf * a.expectedWins + perfPrev * priorWeight) / weight : 0;
+      const confidence = weight / (weight + TIER_E0);
+      const tr = 1000 + TIER_SCALE * perfMix * confidence;
+      const tier: Tier = weight < TIER_MIN_WEIGHT ? "unranked" : tierFromTR(tr);
+
+      rows.push({
+        id: p.id,
+        name: p.name,
+        tier,
+        tr,
+        winIndex,
+        lossIndex,
+        perf: perfMix,
+        confidence,
+        games: a.gameCount,
+        weight,
+        playStyle: tier === "unranked" ? null : computePlayStyle(winIndex, lossIndex),
+        prevTier,
+      });
+
+      prior.set(p.id, { perf: perfMix, weight, tier });
+    }
+
+    rows.sort((a, b) => b.tr - a.tr);
+    result.set(quarter, rows);
+  }
+
+  return result;
 }
 
 // ---------- v2.10: head-to-head matrix, nemesis/victim, per-game-type ----------
@@ -392,7 +580,7 @@ export function computeHeadToHeadMatrix(
   games: GameResult[]
 ): HeadToHeadMatrixCell[] {
   const pairs = new Map<string, { won: number; lost: number; games: number }>();
-  const key = (a: string, b: string) => `${a} ${b}`;
+  const key = (a: string, b: string) => `${a} ${b}`;
 
   for (const g of activeGames(games)) {
     const points = g.points ?? 1;

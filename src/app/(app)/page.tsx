@@ -6,11 +6,13 @@ import {
   computeRecentForm,
   computeCurrentStreaks,
   computeTodaySummary,
+  computeQuarterlyTiers,
 } from "@/lib/stats";
 import { simplifiedSettlements } from "@/lib/settle";
 import { activeGames } from "@/lib/games";
+import { currentQuarterKey, formatQuarterKey } from "@/lib/time";
 import { format } from "date-fns";
-import { GameTypeBadge, ResultBadge, StreakBadge } from "@/components/badges";
+import { GameTypeBadge, ResultBadge, StreakBadge, TierBadge } from "@/components/badges";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +33,20 @@ export default async function DashboardPage() {
 
   const today = computeTodaySummary(db.participants, db.games);
   const { hot, cold } = computeHotColdPlayers(db.participants, db.games);
+
+  // v2.15 — 이번 분기 통합 티어 상위 3명 (PRD §16.7). 아직 이번 분기 기록이
+  // 없으면(예: 분기 첫날) 데이터가 있는 가장 최근 분기로 대신 보여준다 —
+  // /stats 분기 선택의 기본값 로직과 동일한 fallback.
+  const tierByQuarter = computeQuarterlyTiers(db.participants, db.games, "all");
+  const tierQuarters = Array.from(tierByQuarter.keys()).sort().reverse();
+  const tierQuarter = tierQuarters.includes(currentQuarterKey())
+    ? currentQuarterKey()
+    : tierQuarters[0] ?? null;
+  const tierTop3 = tierQuarter
+    ? (tierByQuarter.get(tierQuarter) ?? [])
+        .filter((r) => r.tier !== "unranked")
+        .slice(0, 3)
+    : [];
   const activeParticipants = db.participants.filter((p) => p.active);
   const formById = new Map(
     computeRecentForm(activeParticipants, db.games, 5).map((f) => [f.id, f])
@@ -78,6 +94,35 @@ export default async function DashboardPage() {
           </span>
         )}
       </div>
+
+      {tierQuarter && (
+        <section className="bg-white rounded-2xl border border-slate-200 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold">
+              {formatQuarterKey(tierQuarter)} 티어 (통합)
+            </h2>
+            <Link href="/stats" className="text-xs text-slate-500 hover:underline">
+              전체 보기 →
+            </Link>
+          </div>
+          {tierTop3.length === 0 ? (
+            <p className="text-sm text-slate-400">
+              아직 배치를 완료한 참가자가 없습니다.
+            </p>
+          ) : (
+            <ul className="flex flex-wrap gap-x-6 gap-y-2">
+              {tierTop3.map((row, i) => (
+                <li key={row.id} className="flex items-center gap-2 text-sm">
+                  <span className="w-4 text-slate-400">{i + 1}</span>
+                  <span className="font-medium">{row.name}</span>
+                  <TierBadge tier={row.tier} size="sm" />
+                  <span className="text-slate-400">{Math.round(row.tr)} TR</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       <div className="grid gap-6 md:grid-cols-2">
         <section className="bg-white rounded-2xl border border-slate-200 p-5">

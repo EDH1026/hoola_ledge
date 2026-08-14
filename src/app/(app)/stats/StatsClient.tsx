@@ -15,7 +15,8 @@ import {
 } from "recharts";
 import { GAME_TYPE_LABELS, GAME_TYPES, GameResult } from "@/lib/types";
 import { activeGames } from "@/lib/games";
-import { TierBadge } from "@/components/badges";
+import { TierBadge, PlayStyleBadge } from "@/components/badges";
+import { currentQuarterKey, formatQuarterKey } from "@/lib/time";
 import {
   computeParticipantStats,
   computeHeadToHead,
@@ -23,7 +24,7 @@ import {
   computeNemesisAndVictim,
   computeGameTypeStats,
   computeRecords,
-  computeTier,
+  computeQuarterlyTiers,
   groupGamesByPeriod,
   filterGamesByPreset,
   filterGamesByType,
@@ -32,6 +33,9 @@ import {
   RangePreset,
   RecordTier,
   RecordTierEntry,
+  Tier,
+  TierRow,
+  TIER_MIN_WEIGHT,
 } from "@/lib/stats";
 
 interface ParticipantLite {
@@ -60,6 +64,39 @@ const GAME_TYPE_OPTIONS: { value: GameTypeFilter; label: string }[] = [
   { value: "all", label: "전체" },
   ...GAME_TYPES.map((gt) => ({ value: gt, label: GAME_TYPE_LABELS[gt] })),
 ];
+
+// v2.15 분기 티어 섹션 — "통합"을 맨 앞에 두는 건 표본이 가장 크고(§16.7)
+// 대표 티어로 쓰기 좋기 때문. 위 GAME_TYPE_OPTIONS의 "전체"와 라벨이 다른 건
+// 의도적 — 여긴 종목을 "합산"한다는 뜻이라 "통합"이 더 정확하다.
+const TIER_GAME_TYPE_TABS: { value: GameTypeFilter; label: string }[] = [
+  { value: "all", label: "통합" },
+  ...GAME_TYPES.map((gt) => ({ value: gt, label: GAME_TYPE_LABELS[gt] })),
+];
+
+// Only used to decide the promotion-arrow direction (current tier's rank vs.
+// previous quarter's) — unrelated to the TR cutoffs themselves, which live in
+// computeQuarterlyTiers().
+const TIER_RANK: Record<Tier, number> = {
+  unranked: -1,
+  bronze: 0,
+  silver: 1,
+  gold: 2,
+  platinum: 3,
+  diamond: 4,
+  master: 5,
+  challenger: 6,
+};
+
+type TierDelta = "up" | "down" | "same" | "new";
+
+function tierDelta(row: TierRow): TierDelta {
+  if (row.prevTier === null) return "new";
+  const prevRank = TIER_RANK[row.prevTier];
+  const curRank = TIER_RANK[row.tier];
+  if (curRank > prevRank) return "up";
+  if (curRank < prevRank) return "down";
+  return "same";
+}
 
 // Data-driven color intensity can't be expressed as static Tailwind classes
 // (the scanner needs literal class strings), so the head-to-head matrix uses
@@ -103,6 +140,49 @@ export default function StatsClient({
   const [gameType, setGameType] = useState<GameTypeFilter>("all");
   const [h2hParticipantId, setH2hParticipantId] = useState<string | null>(
     initialH2hParticipantId
+  );
+
+  // v2.15 분기 티어 — 화면 상단의 기간·종목 필터와 완전히 독립이어야 하므로
+  // (PRD §16.7) 항상 원본 games 전체를 넘긴다(filteredGames 아님). 종목 탭
+  // 4개를 한 번에 계산해두고 탭 전환은 계산된 맵에서 골라 쓰기만 한다 — 탭을
+  // 바꿀 때마다 전체 재계산이 일어나지 않도록.
+  const [tierGameType, setTierGameType] = useState<GameTypeFilter>("all");
+  const [tierQuarter, setTierQuarter] = useState<string | null>(null);
+
+  const tiersByGameType = useMemo(() => {
+    const map = new Map<GameTypeFilter, Map<string, TierRow[]>>();
+    for (const tab of TIER_GAME_TYPE_TABS) {
+      map.set(tab.value, computeQuarterlyTiers(participants, games, tab.value));
+    }
+    return map;
+  }, [participants, games]);
+
+  // Everything from here down is cheap (a handful of participants/quarters)
+  // and derived synchronously each render — only the fold over the full game
+  // history above is worth memoizing.
+  const tierQuartersForType: Map<string, TierRow[]> =
+    tiersByGameType.get(tierGameType) ?? new Map();
+  const availableTierQuarters = Array.from(tierQuartersForType.keys())
+    .sort()
+    .reverse(); // most recent first
+  // Defaults to the current quarter if it has data; otherwise the most
+  // recent quarter that does. If the user picked a quarter that doesn't
+  // exist for the newly-selected game type tab, this also silently falls
+  // back rather than showing an empty screen.
+  const effectiveTierQuarter: string | null =
+    (tierQuarter && tierQuartersForType.has(tierQuarter) ? tierQuarter : null) ??
+    (tierQuartersForType.has(currentQuarterKey()) ? currentQuarterKey() : null) ??
+    availableTierQuarters[0] ??
+    null;
+
+  const tierRows = effectiveTierQuarter
+    ? tierQuartersForType.get(effectiveTierQuarter) ?? []
+    : [];
+  // Inactive participants are hidden by default, but still shown if they
+  // actually played in the selected quarter (PRD §16.7).
+  const activeParticipantById = new Map(participants.map((p) => [p.id, p.active]));
+  const visibleTierRows = tierRows.filter(
+    (r) => activeParticipantById.get(r.id) !== false || r.games > 0
   );
 
   // Only consulted when range === "custom"; harmless to always pass.
@@ -299,12 +379,7 @@ export default function StatsClient({
       </div>
 
       <section className="bg-white rounded-2xl border border-slate-200 p-5">
-        <h2 className="font-semibold">순위표 ({filteredGames.length}게임 기준)</h2>
-        <p className="text-xs text-slate-400 mb-4">
-          티어는 승률 기준(3경기 미만이면 랭크 미배정)입니다 — 브론즈 &lt;35% ·
-          실버 &lt;45% · 골드 &lt;55% · 플래티넘 &lt;65% · 다이아몬드 &lt;75% ·
-          챌린저 ≥75%.
-        </p>
+        <h2 className="font-semibold mb-4">순위표 ({filteredGames.length}게임 기준)</h2>
         {activeStats.length === 0 ? (
           <p className="text-sm text-slate-400">해당 기간에 게임 기록이 없습니다.</p>
         ) : (
@@ -313,7 +388,6 @@ export default function StatsClient({
               <thead>
                 <tr className="text-left text-slate-400 text-xs">
                   <th className="py-2 pr-4">이름</th>
-                  <th className="py-2 pr-4">티어</th>
                   <th className="py-2 pr-4">참여</th>
                   <th className="py-2 pr-4">승</th>
                   <th className="py-2 pr-4">무</th>
@@ -336,9 +410,6 @@ export default function StatsClient({
                       }`}
                     >
                       <td className="py-2 pr-4 font-medium">{s.name}</td>
-                      <td className="py-2 pr-4">
-                        <TierBadge tier={computeTier(s.winRate, s.wins + s.losses)} />
-                      </td>
                       <td className="py-2 pr-4 text-slate-500">{s.appearances}</td>
                       <td className="py-2 pr-4 text-emerald-600">{s.wins}</td>
                       <td className="py-2 pr-4 text-slate-400">
@@ -384,6 +455,64 @@ export default function StatsClient({
             </table>
           </div>
         )}
+      </section>
+
+      <section className="bg-white rounded-2xl border border-slate-200 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
+          <h2 className="font-semibold">분기 티어</h2>
+          {availableTierQuarters.length > 0 && (
+            <select
+              value={effectiveTierQuarter ?? ""}
+              onChange={(e) => setTierQuarter(e.target.value)}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+            >
+              {availableTierQuarters.map((q) => (
+                <option key={q} value={q}>
+                  {formatQuarterKey(q)}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+        <p className="text-xs text-slate-400 mb-4">
+          위 기간·종목 필터와 무관하게 항상 분기 단위로 계산됩니다. 승
+          지수·패 지수는 1.00이 기대치입니다.
+        </p>
+
+        <div className="flex gap-1 mb-4 flex-wrap">
+          {TIER_GAME_TYPE_TABS.map((tab) => (
+            <button
+              key={tab.value}
+              type="button"
+              onClick={() => setTierGameType(tab.value)}
+              className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
+                tierGameType === tab.value
+                  ? "bg-slate-900 text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {!effectiveTierQuarter || visibleTierRows.length === 0 ? (
+          <p className="text-sm text-slate-400">
+            이 종목으로는 아직 분기 티어를 계산할 만한 기록이 없습니다.
+          </p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {visibleTierRows.map((row) => (
+              <TierCard key={row.id} row={row} />
+            ))}
+          </div>
+        )}
+
+        <p className="text-xs text-slate-400 mt-4">
+          참석 인원수로 계산한 기대 승·패 대비 성과로 매깁니다 — 4인전 기대
+          승률 25%, 5인전 20%. 판돈(점수)과 표본 크기도 반영되며, 분기마다
+          리셋되되 직전 분기 성적이 35% 이어집니다.
+        </p>
       </section>
 
       {h2hParticipantId && (
@@ -659,6 +788,77 @@ export default function StatsClient({
         </div>
       </section>
     </div>
+  );
+}
+
+/** One participant's quarterly tier card — placement-in-progress and ranked participants render differently (PRD §16.7). */
+function TierCard({ row }: { row: TierRow }) {
+  const delta = tierDelta(row);
+  const placementProgress = Math.min(1, row.weight / TIER_MIN_WEIGHT);
+
+  return (
+    <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium text-sm truncate">{row.name}</span>
+        <DeltaArrow delta={delta} />
+      </div>
+
+      {row.tier === "unranked" ? (
+        <div>
+          <p className="text-xs text-slate-500 mb-1">배치 중 ({row.games}판)</p>
+          <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
+            <div
+              className="h-full bg-slate-400"
+              style={{ width: `${placementProgress * 100}%` }}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 flex-wrap">
+          <TierBadge tier={row.tier} />
+          <span className="text-sm font-semibold text-slate-900">
+            {Math.round(row.tr)} TR
+          </span>
+          {row.playStyle && <PlayStyleBadge style={row.playStyle} />}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-slate-500">
+        <span>승 지수 {row.winIndex.toFixed(2)}</span>
+        <span>패 지수 {row.lossIndex.toFixed(2)}</span>
+        <span>{row.games}판 참여</span>
+        <span>신뢰도 {(row.confidence * 100).toFixed(0)}%</span>
+      </div>
+    </div>
+  );
+}
+
+function DeltaArrow({ delta }: { delta: TierDelta }) {
+  if (delta === "new") {
+    return (
+      <span className="text-xs font-semibold text-blue-500 whitespace-nowrap">
+        NEW
+      </span>
+    );
+  }
+  if (delta === "up") {
+    return (
+      <span className="text-xs font-semibold text-emerald-600 whitespace-nowrap">
+        ▲ 상승
+      </span>
+    );
+  }
+  if (delta === "down") {
+    return (
+      <span className="text-xs font-semibold text-red-500 whitespace-nowrap">
+        ▼ 하락
+      </span>
+    );
+  }
+  return (
+    <span className="text-xs font-medium text-slate-300 whitespace-nowrap">
+      − 유지
+    </span>
   );
 }
 
