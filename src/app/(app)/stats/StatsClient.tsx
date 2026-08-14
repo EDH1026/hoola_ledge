@@ -100,8 +100,14 @@ type TierDelta = "up" | "down" | "same" | "new";
 // else toward the center by auto-scaling. Bounds come from the same
 // simulation as the tier constants (90-day p1~p99: ENG 0.52~1.56, PERF
 // -1.42~+1.29) with headroom, so don't tune these without re-running it.
-const STYLE_MAP_X_DOMAIN: [number, number] = [0.4, 1.8];
-const STYLE_MAP_X_TICKS = [0.4, 0.7, 1.0, 1.3, 1.6];
+// PRD's stated upper bound (1.8) is kept as-is; the lower bound is widened
+// from the PRD's 0.4 to 0.2 purely so 1.0 ("기대치") sits at the exact
+// horizontal center of the chart, matching how the Y axis is already
+// symmetric around 0 ("본전") — real ENG values rarely dip below 0.4 (90-day
+// p1 = 0.52) anyway, so this only adds unused left margin, it doesn't hide
+// or clip any data that the 0.4 bound wasn't already going to show.
+const STYLE_MAP_X_DOMAIN: [number, number] = [0.2, 1.8];
+const STYLE_MAP_X_TICKS = [0.2, 0.6, 1.0, 1.4, 1.8];
 const STYLE_MAP_Y_DOMAIN: [number, number] = [-1.6, 1.6];
 const STYLE_MAP_Y_TICKS = [-1.6, -0.8, 0, 0.8, 1.6];
 
