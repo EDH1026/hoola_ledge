@@ -10,7 +10,7 @@ import {
   GameTypeFilter,
 } from "@/lib/stats";
 import { simplifiedSettlements } from "@/lib/settle";
-import { activeGames } from "@/lib/games";
+import { activeGames, withinDayKey } from "@/lib/games";
 import { currentQuarterKey, formatQuarterKey, gameWallClock } from "@/lib/time";
 import { format } from "date-fns";
 import { GAME_TYPE_LABELS, GAME_TYPES } from "@/lib/types";
@@ -27,10 +27,21 @@ export default async function DashboardPage() {
   const nameMap = new Map(db.participants.map((p) => [p.id, p.name]));
   const gamesActive = activeGames(db.games);
   const stats = computeParticipantStats(db.participants, db.games);
-  const topRanked = stats.filter((s) => s.appearances > 0).slice(0, 5);
-  const recentGames = [...gamesActive]
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .slice(0, 6);
+  // 전원 표시 — 예전엔 상위 5명만 잘라 보여줬는데, 참가자가 많지 않은
+  // 그룹이라 전원을 한눈에 보는 게 더 유용하다는 요청으로 상한을 없앴다.
+  // computeParticipantStats가 이미 netPoints 내림차순으로 반환하므로 별도
+  // 정렬은 필요 없다.
+  const rankedStats = stats.filter((s) => s.appearances > 0);
+  // 최근 게임 = "최근 N건"이 아니라 가장 최근 게임이 있었던 영업일 하루의
+  // 기록 전체. 그 날 몇 판을 쳤든 전부 보여준다. withinDayKey로 정렬해
+  // 자정을 넘겨 이어진 게임 밤도 실제 진행 순서(최신 순)를 유지한다.
+  const mostRecentGameDate = gamesActive.reduce(
+    (latest, g) => (g.date > latest ? g.date : latest),
+    ""
+  );
+  const recentGames = gamesActive
+    .filter((g) => g.date === mostRecentGameDate)
+    .sort((a, b) => withinDayKey(b).localeCompare(withinDayKey(a)));
   const transactions = simplifiedSettlements(db.games, db.settlements, db.adjustments);
 
   const recentDays = computeRecentGameDaysSummary(db.participants, db.games);
@@ -158,11 +169,11 @@ export default async function DashboardPage() {
           <p className="text-xs text-slate-400 mb-4">
             게임 승/무/패 기준 — 과거 누적기록(조정)은 반영되지 않습니다.
           </p>
-          {topRanked.length === 0 ? (
+          {rankedStats.length === 0 ? (
             <p className="text-sm text-slate-400">아직 기록된 게임이 없습니다.</p>
           ) : (
             <ol className="space-y-2">
-              {topRanked.map((s, i) => (
+              {rankedStats.map((s, i) => (
                 <li
                   key={s.id}
                   className="flex items-center justify-between text-sm"
