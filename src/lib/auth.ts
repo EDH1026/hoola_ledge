@@ -9,6 +9,22 @@ async function sha256Hex(input: string): Promise<string> {
     .join("");
 }
 
+/**
+ * Constant-time comparison of two equal-length hex strings, so a failed
+ * password check can't leak how many leading characters matched via
+ * response timing. Both callers below always pass two SHA-256 hex digests
+ * (always 64 chars), so the length check never actually diverges based on
+ * secret content — only content-independent digest length, which is public.
+ */
+function timingSafeEqualHex(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 /** The cookie value a correctly-authenticated session should carry. */
 export async function expectedToken(): Promise<string> {
   const password = process.env.SITE_PASSWORD ?? "";
@@ -17,7 +33,8 @@ export async function expectedToken(): Promise<string> {
 
 export async function checkPassword(input: string): Promise<boolean> {
   const password = process.env.SITE_PASSWORD ?? "";
-  return password.length > 0 && input === password;
+  if (password.length === 0) return false;
+  return timingSafeEqualHex(await sha256Hex(input), await sha256Hex(password));
 }
 
 /** The cookie value a correctly-authenticated admin session should carry. */
@@ -28,7 +45,32 @@ export async function expectedAdminToken(): Promise<string> {
 
 export async function checkAdminPassword(input: string): Promise<boolean> {
   const password = process.env.ADMIN_PASSWORD ?? "";
-  return password.length > 0 && input === password;
+  if (password.length === 0) return false;
+  return timingSafeEqualHex(await sha256Hex(input), await sha256Hex(password));
+}
+
+/**
+ * Validates a `next` redirect target coming from a query string or hidden
+ * form field (the login and admin-login flows) is a same-origin relative
+ * path, never an absolute URL — without this, a link like
+ * `/login?next=https://evil.example` would make loginAction's redirect()
+ * send a user who just typed in the real password straight to an
+ * attacker's site (open redirect, useful for phishing). Anything that
+ * doesn't look like a plain "/…" path — protocol-relative "//host", a
+ * backslash variant "/\host" some browsers still treat as protocol-relative,
+ * or any "://" — falls back to `fallback`.
+ */
+export function safeNextPath(next: string, fallback = "/"): string {
+  if (
+    typeof next === "string" &&
+    next.startsWith("/") &&
+    !next.startsWith("//") &&
+    !next.startsWith("/\\") &&
+    !next.includes("://")
+  ) {
+    return next;
+  }
+  return fallback;
 }
 
 /**

@@ -5,13 +5,14 @@ import { redirect } from "next/navigation";
 import {
   checkPassword,
   expectedToken,
+  safeNextPath,
   COOKIE_NAME,
   ADMIN_COOKIE_NAME,
 } from "@/lib/auth";
 
 export async function loginAction(formData: FormData) {
   const password = String(formData.get("password") ?? "");
-  const next = String(formData.get("next") ?? "/") || "/";
+  const next = safeNextPath(String(formData.get("next") ?? "/"));
 
   const ok = await checkPassword(password);
   if (!ok) {

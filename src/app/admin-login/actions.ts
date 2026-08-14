@@ -5,12 +5,16 @@ import { redirect } from "next/navigation";
 import {
   checkAdminPassword,
   expectedAdminToken,
+  safeNextPath,
   ADMIN_COOKIE_NAME,
 } from "@/lib/auth";
 
 export async function adminLoginAction(formData: FormData) {
   const password = String(formData.get("password") ?? "");
-  const next = String(formData.get("next") ?? "/participants") || "/participants";
+  const next = safeNextPath(
+    String(formData.get("next") ?? "/participants"),
+    "/participants"
+  );
 
   if (!process.env.ADMIN_PASSWORD) {
     redirect(`/admin-login?error=unset&next=${encodeURIComponent(next)}`);
