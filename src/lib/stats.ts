@@ -770,27 +770,38 @@ export interface RecordTier {
 }
 
 /**
- * Groups entries into up to `tiers` distinct-value bands using standard
- * competition ranking ("1224" — 1, 2, 2, 4, not dense "1223" — 1, 2, 2, 3):
- * every tied entry at a value shares that band's rank ("공동 1위" etc.), and
- * the next distinct value's rank *skips ahead* by however many entries just
- * tied — e.g. two entries tied for 1위 pushes the next distinct value to
- * 3위, not 2위; a single 1위 plus two tied at 2위 leaves no 3위 at all, the
- * next distinct value is 4위. `direction: "asc"` ranks the *smallest* values
- * first (e.g. "최저 순득점"), otherwise (default) largest first.
+ * Groups entries into value bands using standard competition ranking ("1224"
+ * — 1, 2, 2, 4, not dense "1223" — 1, 2, 2, 3): every tied entry at a value
+ * shares that band's rank ("공동 1위" etc.), and the next distinct value's
+ * rank *skips ahead* by however many entries just tied — e.g. two entries
+ * tied for 1위 pushes the next distinct value to 3위, not 2위; a single 1위
+ * plus two tied at 2위 leaves no 3위 at all, the next distinct value is 4위.
+ *
+ * `tiers` caps by *rank number*, not by how many distinct-value bands get
+ * shown (v2.20 revision, PRD §26.4) — a band is only included if its own
+ * rank is `<= tiers`. So if the very first tie already fills ranks 1-3,
+ * nothing else qualifies and only that one band is returned; conversely a
+ * lone 1위 followed by a 2-way tie at 2위 still shows both bands even though
+ * the tie's members occupy ranks 2-3. Once a band's rank exceeds `tiers`,
+ * iteration stops — there is nothing "hidden" at the skipped ranks in
+ * between, they're simply unoccupied by construction.
+ *
+ * `direction: "asc"` ranks the *smallest* values first (e.g. "최저 순득점"),
+ * otherwise (default) largest first.
  */
 function topTiers(
   entries: RecordTierEntry[],
   tiers = 3,
   direction: "desc" | "asc" = "desc"
 ): RecordTier[] {
-  const distinctValues = Array.from(new Set(entries.map((e) => e.value)))
-    .sort((a, b) => (direction === "desc" ? b - a : a - b))
-    .slice(0, tiers);
+  const distinctValues = Array.from(new Set(entries.map((e) => e.value))).sort((a, b) =>
+    direction === "desc" ? b - a : a - b
+  );
 
   const result: RecordTier[] = [];
   let rank = 1;
   for (const value of distinctValues) {
+    if (rank > tiers) break;
     const tierEntries = entries.filter((e) => e.value === value);
     result.push({ rank, entries: tierEntries });
     rank += tierEntries.length;

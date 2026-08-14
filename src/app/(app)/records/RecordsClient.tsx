@@ -491,7 +491,7 @@ function formatRecordEntry(e: RecordTierEntry, unit: string, signed: boolean): s
   return `${namePart}${sign}${e.value}${unit}${range}`;
 }
 
-/** Renders up to 3 competition-ranked tiers (from computeRecords' topTiers — 1224 ranking, so a tie skips ahead the ranks it occupies), each tier possibly holding several tied entries shown as "공동 N위". `signed` prefixes positive values with "+" (for netPoints categories, where the sign matters). */
+/** Renders the top-3-by-rank tiers (from computeRecords' topTiers — 1224 competition ranking, capped by rank number rather than band count, so a big tie can leave fewer than 3 bands or even just one), each tier possibly holding several tied entries shown as "공동 N위". `signed` prefixes positive values with "+" (for netPoints categories, where the sign matters). */
 function RecordCategory({
   label,
   tiers,
