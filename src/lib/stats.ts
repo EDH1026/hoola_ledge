@@ -412,22 +412,6 @@ function tierFromTR(tr: number): Tier {
   return TIER_ORDER[TIER_ORDER.length - 1]; // challenger
 }
 
-export type TierPlayStyle =
-  | "complete"
-  | "highroller"
-  | "grinder"
-  | "sufferer"
-  | "average";
-
-/** PRD §16.8 — win index / loss index read independently of PERF (their difference), to surface a play-style flavor tag alongside the tier. */
-function computePlayStyle(winIndex: number, lossIndex: number): TierPlayStyle {
-  if (winIndex >= 1.15 && lossIndex <= 0.85) return "complete";
-  if (winIndex >= 1.15 && lossIndex > 1.15) return "highroller";
-  if (winIndex < 0.85 && lossIndex <= 0.85) return "grinder";
-  if (winIndex < 0.85 && lossIndex > 1.15) return "sufferer";
-  return "average";
-}
-
 export interface TierRow {
   id: string;
   name: string;
@@ -439,7 +423,6 @@ export interface TierRow {
   confidence: number; // k, 0..1 — how much this quarter's own data (vs. prior) drives TR
   games: number; // games played (attended) this quarter, of the selected type
   weight: number; // wTotal — effective sample weight (this quarter's E_w plus carried-over prior), what TIER_MIN_WEIGHT gates on
-  playStyle: TierPlayStyle | null; // null while still in placement
   prevTier: Tier | null; // this participant's tier at the end of the previous quarter (in the fold sequence) — null only for their very first quarter
 }
 
@@ -551,7 +534,6 @@ export function computeQuarterlyTiers(
         confidence,
         games: a.gameCount,
         weight,
-        playStyle: tier === "unranked" ? null : computePlayStyle(winIndex, lossIndex),
         prevTier,
       });
 
@@ -563,6 +545,86 @@ export function computeQuarterlyTiers(
   }
 
   return result;
+}
+
+// ---------- v2.15: style map (PRD §16.8) — rolling 90-day 2-axis scatter ----------
+//
+// A completely separate representation from the tier system above: no
+// shrinkage, no carryover, no sample-size gate, and a rolling 90-day window
+// instead of calendar quarters. Individual "play style" badges were
+// considered (and briefly built) but the PRD settled on expressing style
+// only through this scatter plot, not a per-person tag.
+
+export interface StyleMapPoint {
+  id: string;
+  name: string;
+  engagement: number; // ENG = (WI + LI) / 2, 1.00 = 기대치
+  performance: number; // PERF = WI - LI, 0 = 본전
+  winIndex: number;
+  lossIndex: number;
+  games: number; // 최근 90일 참여 판수 (점 크기/투명도에 사용)
+}
+
+/**
+ * Raw (unshrunk, ungated) win/loss index over the trailing 90 days, per PRD
+ * §16.8. Participants with zero games in the window are excluded entirely —
+ * a 0-game point plotted at (1.00, 0) would read as a false "doing fine"
+ * signal rather than "no data".
+ *
+ * Axis independence: with W = winIndex and L = lossIndex, ENG = (W+L)/2 and
+ * PERF = W-L are uncorrelated because Cov(W+L, W-L) = Var(W) - Var(L) = 0
+ * whenever E[W] = E[L] (true here: both average to 1/n expected value per
+ * game) — so moving along one axis says nothing about position on the other.
+ */
+export function computeStyleMap(
+  participants: ParticipantLike[],
+  games: GameResult[],
+  gameType: GameTypeFilter
+): StyleMapPoint[] {
+  const recent = filterByDatePreset(activeGames(games), "90d");
+  const scoped = gameType === "all" ? recent : filterGamesByType(recent, gameType);
+
+  const acc = new Map<string, QuarterAccumulator>();
+  const ensure = (id: string): QuarterAccumulator => {
+    let a = acc.get(id);
+    if (!a) {
+      a = emptyAccumulator();
+      acc.set(id, a);
+    }
+    return a;
+  };
+  for (const g of scoped) {
+    const n = g.attendeeIds.length;
+    if (n === 0) continue;
+    const e = 1 / n;
+    const points = g.points ?? 1;
+    for (const attendeeId of g.attendeeIds) {
+      const a = ensure(attendeeId);
+      a.expectedPoints += points * e;
+      a.gameCount += 1;
+    }
+    ensure(g.winnerId).wonPoints += points;
+    ensure(g.loserId).lostPoints += points;
+  }
+
+  const points: StyleMapPoint[] = [];
+  for (const p of participants) {
+    const a = acc.get(p.id);
+    if (!a || a.gameCount === 0) continue;
+    const winIndex = a.expectedPoints > 0 ? a.wonPoints / a.expectedPoints : 0;
+    const lossIndex = a.expectedPoints > 0 ? a.lostPoints / a.expectedPoints : 0;
+    points.push({
+      id: p.id,
+      name: p.name,
+      engagement: (winIndex + lossIndex) / 2,
+      performance: winIndex - lossIndex,
+      winIndex,
+      lossIndex,
+      games: a.gameCount,
+    });
+  }
+
+  return points;
 }
 
 // ---------- v2.10: head-to-head matrix, nemesis/victim, per-game-type ----------

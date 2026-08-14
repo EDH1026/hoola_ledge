@@ -2,8 +2,10 @@
 // Run with: npm run verify:tiers  (or: npx tsx scripts/verify-tiers.ts)
 import {
   computeQuarterlyTiers,
+  computeStyleMap,
   TIER_MIN_WEIGHT,
   TierRow,
+  StyleMapPoint,
   ParticipantLike,
 } from "../src/lib/stats";
 import { quarterKeyOf } from "../src/lib/time";
@@ -147,7 +149,6 @@ function rowFor(rows: TierRow[], id: string): TierRow {
   const n1 = rowFor(rows, "N1");
   assert(n1.weight < TIER_MIN_WEIGHT, `case4: one game should leave weight well under TIER_MIN_WEIGHT, got ${n1.weight}`);
   assert(n1.tier === "unranked", `case4: weight < TIER_MIN_WEIGHT must mean unranked (placement), got ${n1.tier}`);
-  assert(n1.playStyle === null, "case4: placement participants must have playStyle=null");
 }
 
 // Case 5: quarter boundaries — the last day of Q1 and the first day of Q2.
@@ -222,6 +223,104 @@ function rowFor(rows: TierRow[], id: string): TierRow {
   }
   assert(rows.length === 4, "case7: all 4 participants present");
   assert(sorted, `case7: TierRow[] should be sorted by TR descending, got ${rows.map((r) => `${r.name}:${r.tr.toFixed(1)}`).join(", ")}`);
+}
+
+// Style map (PRD §16.8) tests use real wall-clock offsets (the 90-day window
+// is computed from Date.now(), unlike the quarter-key tests above which use
+// fixed calendar dates), so dates are generated relative to "today" here.
+function daysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function styleRowFor(points: StyleMapPoint[], id: string): StyleMapPoint | undefined {
+  return points.find((p) => p.id === id);
+}
+
+// Case 8: style map's two axes move independently. Part A: a 5-person cycle
+// (same shape as case1) where everyone hits their expected rate exactly ->
+// engagement ~= 1.00 and performance ~= 0 for all. Part B: two participants
+// both with PERF = 0 (equal win/loss counts) but very different engagement —
+// proving ENG isn't just a rescaled PERF.
+{
+  const ids = ["SA", "SB", "SC", "SD", "SE"];
+  const participants: ParticipantLike[] = ids.map((id) => ({ id, name: id, active: true }));
+  const games: GameResult[] = [];
+  let gid = 0;
+  for (let round = 0; round < 5; round++) {
+    for (let i = 0; i < 5; i++) {
+      const winner = ids[i];
+      const loser = ids[(i + 1) % 5];
+      games.push(game(`s${gid++}`, daysAgo(10), ids, winner, loser));
+    }
+  }
+  const points = computeStyleMap(participants, games, "all");
+  assert(points.length === 5, "case8a: all 5 participants present in the style map");
+  for (const id of ids) {
+    const p = styleRowFor(points, id);
+    if (!p) throw new Error(`no StyleMapPoint for ${id}`);
+    assert(close(p.engagement, 1.0), `case8a: ${id} at exactly expected rate should have engagement=1.00, got ${p.engagement}`);
+    assert(close(p.performance, 0), `case8a: ${id} performance should be 0, got ${p.performance}`);
+  }
+}
+{
+  const participants: ParticipantLike[] = [
+    { id: "Even2", name: "Even2", active: true },
+    { id: "Rare8", name: "Rare8", active: true },
+    { id: "X1", name: "X1", active: true },
+    { id: "X2", name: "X2", active: true },
+    { id: "X3", name: "X3", active: true },
+  ];
+  const games: GameResult[] = [];
+  // Even2: 4 games at a 4-person table, decisive every time (2 wins, 2 losses).
+  const evenTable = ["Even2", "X1", "X2", "X3"];
+  games.push(game("e1", daysAgo(5), evenTable, "Even2", "X1"));
+  games.push(game("e2", daysAgo(5), evenTable, "Even2", "X2"));
+  games.push(game("e3", daysAgo(5), evenTable, "X1", "Even2"));
+  games.push(game("e4", daysAgo(5), evenTable, "X2", "Even2"));
+  // Rare8: 8 games at a 4-person table, decisive in only 2 (1 win, 1 loss);
+  // bystander (never winnerId/loserId) in the other 6.
+  const rareTable = ["Rare8", "X1", "X2", "X3"];
+  games.push(game("r1", daysAgo(5), rareTable, "Rare8", "X1"));
+  games.push(game("r2", daysAgo(5), rareTable, "X1", "Rare8"));
+  for (let i = 0; i < 6; i++) {
+    games.push(game(`r${3 + i}`, daysAgo(5), rareTable, "X2", "X3"));
+  }
+
+  const points = computeStyleMap(participants, games, "all");
+  const even2 = styleRowFor(points, "Even2");
+  const rare8 = styleRowFor(points, "Rare8");
+  if (!even2 || !rare8) throw new Error("case8b: missing StyleMapPoint");
+  assert(close(even2.performance, 0), `case8b: Even2 (2W/2L) should have performance=0, got ${even2.performance}`);
+  assert(close(rare8.performance, 0), `case8b: Rare8 (1W/1L) should have performance=0, got ${rare8.performance}`);
+  assert(even2.engagement > 1.0, `case8b: Even2 (always decisive) should have engagement > 1.00, got ${even2.engagement}`);
+  assert(rare8.engagement < 1.0, `case8b: Rare8 (mostly bystander) should have engagement < 1.00, got ${rare8.engagement}`);
+}
+
+// Case 9: style map's rolling 90-day gate. A game 91 days ago must be
+// excluded; a game 89 days ago must be included. A participant with only 1
+// (included) game must still appear; a participant with 0 games in the
+// window (whether never-played or only-outside-window) must not appear.
+{
+  const participants: ParticipantLike[] = [
+    { id: "P91", name: "P91", active: true },
+    { id: "P89", name: "P89", active: true },
+    { id: "Ghost", name: "Ghost", active: true },
+    { id: "F1", name: "F1", active: true },
+  ];
+  const games: GameResult[] = [
+    game("old", daysAgo(91), ["P91", "F1"], "P91", "F1"),
+    game("recent", daysAgo(89), ["P89", "F1"], "P89", "F1"),
+  ];
+  const points = computeStyleMap(participants, games, "all");
+  assert(styleRowFor(points, "P91") === undefined, "case9: a participant whose only game is 91 days old must be excluded");
+  const p89 = styleRowFor(points, "P89");
+  assert(p89 !== undefined && p89.games === 1, "case9: a participant with a single 89-day-old game must appear with games=1");
+  assert(styleRowFor(points, "Ghost") === undefined, "case9: a participant with no games at all must be excluded");
 }
 
 console.log("Done.");
