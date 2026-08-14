@@ -144,6 +144,56 @@ export function businessDateFromWallClock(date: string, time: string): string {
 }
 
 /**
+ * v2.18: the exact inverse of `businessDateFromWallClock` above — business
+ * date + "HH:mm" -> the calendar date that time was actually on the clock.
+ * Display-only (PRD §22): `games.date` is a *group key* (which game night a
+ * row belongs to) and is correct as stored; `games.time` has always been the
+ * real wall-clock reading. Concatenating them directly (`${date} ${time}`)
+ * silently claims a moment that never happened for any row logged past real
+ * midnight — e.g. a game logged at business date "2026-08-14", time "01:00"
+ * actually happened on the calendar date 2026-08-15, not 2026-08-14. This
+ * function recovers that real calendar date so display code can show the
+ * instant that actually occurred instead of the grouping key.
+ */
+export function calendarDateFromBusinessDay(date: string, time: string): string {
+  const hour = Number(time.slice(0, 2));
+  return hour >= BUSINESS_DAY_START_HOUR ? date : addDaysToIsoDate(date, 1);
+}
+
+export interface GameWallClock {
+  /** True calendar date "yyyy-MM-dd" the row's `time` actually occurred on — what display code should show. */
+  date: string;
+  /** "HH:mm", the stored value unchanged. Undefined for legacy rows that predate this field. */
+  time?: string;
+  /** True if the calendar date differs from the business date (the row was logged past real midnight). */
+  crossedMidnight: boolean;
+  /** The business date the row is grouped under (unchanged) — what a "게임 밤" badge should name. */
+  businessDate: string;
+}
+
+/**
+ * v2.18: derives the display-ready wall clock for one stored (`date`,
+ * `time`) pair — every place that renders a single game/settlement row's
+ * timestamp (as opposed to a day-level label — see PRD §22.4's table) should
+ * go through this instead of concatenating the fields directly. A legacy row
+ * with no `time` has no wall clock to recover, so it's returned as-is with
+ * `crossedMidnight: false` — the business date is the only date available
+ * for it either way, so there's nothing to reconcile or flag.
+ */
+export function gameWallClock(date: string, time?: string): GameWallClock {
+  if (!time) {
+    return { date, time: undefined, crossedMidnight: false, businessDate: date };
+  }
+  const calendarDate = calendarDateFromBusinessDay(date, time);
+  return {
+    date: calendarDate,
+    time,
+    crossedMidnight: calendarDate !== date,
+    businessDate: date,
+  };
+}
+
+/**
  * A UTC ISO instant (typically `createdAt`, which no app feature ever
  * rewrites) -> the business date that instant belongs to. v2.17's backfill
  * (`src/lib/backfill.ts`) is built entirely on this: re-deriving a row's

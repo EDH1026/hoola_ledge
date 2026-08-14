@@ -59,6 +59,25 @@ export function InactiveBadge() {
   );
 }
 
+/**
+ * v2.18 (PRD §22.5) — marks a game row whose displayed calendar timestamp
+ * falls on a different date than the business day it's grouped/filtered
+ * under (i.e. it was logged past real midnight). Without this, a game
+ * showing "2026-08-15 01:00" while sitting in an "8/14" filtered list reads
+ * as a bug rather than the intended business-day grouping.
+ */
+export function GameNightBadge({ businessDate }: { businessDate: string }) {
+  const label = `${Number(businessDate.slice(5, 7))}/${Number(businessDate.slice(8, 10))} 게임밤`;
+  return (
+    <span
+      className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700 px-2 py-0.5 text-xs font-medium whitespace-nowrap"
+      title={`영업일 기준 ${businessDate}의 게임 밤으로 묶임`}
+    >
+      {label}
+    </span>
+  );
+}
+
 export function LedgerAdjustmentBadge() {
   return (
     <span className="inline-flex items-center rounded-full border border-slate-300 bg-slate-100 text-slate-600 px-2 py-0.5 text-xs font-medium whitespace-nowrap">

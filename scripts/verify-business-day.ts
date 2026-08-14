@@ -1,10 +1,12 @@
 // Quick standalone sanity check for the v2.16 business-day redefinition
-// (06:00-30:00 day boundary) and its v2.17 backfill (PRD §20). Run with:
-// npm run verify:business-day
+// (06:00-30:00 day boundary), its v2.17 backfill (PRD §20), and the v2.18
+// display/group split (PRD §22). Run with: npm run verify:business-day
 import {
   BUSINESS_DAY_START_HOUR,
   addDaysToIsoDate,
   businessDateFromWallClock,
+  calendarDateFromBusinessDay,
+  gameWallClock,
   minutesSinceBusinessDayStart,
   seoulLocalToUtcIso,
 } from "../src/lib/time";
@@ -189,6 +191,79 @@ const v8 = planBusinessDayBackfill({ date: "2026-01-01", time: "01:00", createdA
 assert(
   v8.action === "update" && v8.date === "2025-12-31",
   `case8: 새해 첫날 새벽 기록은 작년 마지막 날로 update 되어야 함, got ${JSON.stringify(v8)}`
+);
+
+// ---------- v2.18: calendarDateFromBusinessDay / gameWallClock (PRD §22) ----------
+
+// 1) Round-trip invariant: businessDateFromWallClock is the true inverse of
+// calendarDateFromBusinessDay for any (business date, time) pair. This is
+// the single most important guarantee for this feature — if it breaks, the
+// displayed calendar date and the group a game actually sorts/filters under
+// would silently disagree.
+const roundTripDate = "2026-08-14";
+const roundTripTimes = ["00:00", "01:00", "05:59", "06:00", "12:00", "23:59"];
+for (const t of roundTripTimes) {
+  const calendar = calendarDateFromBusinessDay(roundTripDate, t);
+  const backToBusiness = businessDateFromWallClock(calendar, t);
+  assert(
+    backToBusiness === roundTripDate,
+    `case9 (${t}): businessDateFromWallClock(calendarDateFromBusinessDay(d,t), t) should equal d, got ${backToBusiness}`
+  );
+}
+
+// 2) The headline case from the bug report: a game grouped under business
+// date 8/14 at 01:00 actually happened on the calendar date 8/15.
+assert(
+  calendarDateFromBusinessDay("2026-08-14", "01:00") === "2026-08-15",
+  "case10: business date 8/14 + 01:00 was actually played on 8/15"
+);
+
+// 3) Boundary: exactly 06:00 doesn't cross midnight; 05:59 does.
+assert(
+  calendarDateFromBusinessDay("2026-08-14", "06:00") === "2026-08-14",
+  "case11a: exactly 06:00 stays on the same calendar date"
+);
+assert(
+  calendarDateFromBusinessDay("2026-08-14", "05:59") === "2026-08-15",
+  "case11b: 05:59 rolls forward to the next calendar date"
+);
+
+// 4) Month/year boundary.
+assert(
+  calendarDateFromBusinessDay("2025-12-31", "01:00") === "2026-01-01",
+  "case12: business date 2025-12-31 + 01:00 was actually played on New Year's Day"
+);
+
+// 5) gameWallClock: a legacy row with no `time` can't have its wall clock
+// recovered, so it must pass the business date through unchanged and never
+// claim a (false) midnight crossing.
+const legacyWallClock = gameWallClock("2026-08-14", undefined);
+assert(
+  legacyWallClock.date === "2026-08-14" &&
+    legacyWallClock.time === undefined &&
+    legacyWallClock.crossedMidnight === false,
+  `case13: a time-less legacy row must pass its date through with crossedMidnight=false, got ${JSON.stringify(
+    legacyWallClock
+  )}`
+);
+
+// 6) Display vs. grouping consistency: two games from the same game night —
+// one before and one after real midnight — must display on *different*
+// calendar dates (that's the whole point of this feature) while both still
+// folding back to the same business date (so the grouping v2.16/v2.17
+// already established is untouched by this display-only change).
+const eveningWallClock = gameWallClock("2026-08-14", "22:00");
+const lateNightWallClock = gameWallClock("2026-08-14", "01:00");
+assert(
+  eveningWallClock.date === "2026-08-14" && lateNightWallClock.date === "2026-08-15",
+  `case14a: same game night's evening/late-night games must display on different calendar dates, got ${JSON.stringify(
+    { evening: eveningWallClock.date, lateNight: lateNightWallClock.date }
+  )}`
+);
+assert(
+  businessDateFromWallClock(eveningWallClock.date, "22:00") === "2026-08-14" &&
+    businessDateFromWallClock(lateNightWallClock.date, "01:00") === "2026-08-14",
+  "case14b: both must still fold back to the same business date 2026-08-14"
 );
 
 console.log("Done.");

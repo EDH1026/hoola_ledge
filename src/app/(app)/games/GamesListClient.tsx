@@ -9,6 +9,7 @@ import {
   isWithinEditWindow,
   BUSINESS_DAY_START_HOUR,
   addDaysToIsoDate,
+  gameWallClock,
 } from "@/lib/time";
 import {
   GAME_TYPE_LABELS,
@@ -16,7 +17,7 @@ import {
   GameResult,
   GameType,
 } from "@/lib/types";
-import { GameTypeBadge, InactiveBadge } from "@/components/badges";
+import { GameTypeBadge, InactiveBadge, GameNightBadge } from "@/components/badges";
 import { computeParticipantPointTotals } from "@/lib/stats";
 
 interface ParticipantLite {
@@ -245,6 +246,12 @@ export default function GamesListClient({
               const points = g.points ?? 1;
               const inactive = g.active === false;
               const isEditing = editingId === g.id;
+              // v2.18 (PRD §22) — g.date is the business day this game is
+              // *grouped* under, not necessarily the calendar date its time
+              // actually occurred on; wallClock recovers the real one for
+              // display. N차전 (seq, above) stays business-day-keyed on
+              // purpose — only this row's own timestamp changes.
+              const wallClock = gameWallClock(g.date, g.time);
               // Non-admins only ever see active games (games/page.tsx keeps
               // soft-deleted rows admin-only), so `!inactive` is already
               // guaranteed there — it's included explicitly anyway so this
@@ -257,11 +264,14 @@ export default function GamesListClient({
                   <div className="flex flex-wrap items-center gap-2 justify-between">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm text-slate-400 whitespace-nowrap">
-                        {format(new Date(g.date), "yyyy-MM-dd")}
-                        {g.time ? ` ${g.time}` : ""}
+                        {format(new Date(wallClock.date), "yyyy-MM-dd")}
+                        {wallClock.time ? ` ${wallClock.time}` : ""}
                         {seq ? ` · ${seq}차전` : ""}
                       </span>
                       <GameTypeBadge gameType={g.gameType} />
+                      {wallClock.crossedMidnight && (
+                        <GameNightBadge businessDate={wallClock.businessDate} />
+                      )}
                       {inactive && <InactiveBadge />}
                     </div>
                     <div className="flex items-center gap-3">
@@ -525,6 +535,12 @@ function GameEditForm({
   const showBusinessDayWarning =
     isAdmin && isPreBusinessDayBoundary && !businessDayFixApplied;
 
+  // v2.18 (PRD §22.4) — the date/time inputs above edit the *stored* values
+  // (business day + wall clock) directly, which is correct for what gets
+  // saved. But "날짜 2026-08-14 / 시간 01:00" reads as a contradiction unless
+  // it's spelled out that the real calendar moment is the next day.
+  const editedWallClock = gameWallClock(date, time);
+
   if (step === "confirm") {
     return (
       <div className="rounded-xl border-2 border-slate-900 bg-white p-4 space-y-2.5">
@@ -546,6 +562,11 @@ function GameEditForm({
           <>
             <DiffRow label="날짜" before={game.date} after={date} />
             <DiffRow label="시간" before={game.time || "(없음)"} after={time} />
+            {editedWallClock.crossedMidnight && (
+              <p className="text-xs text-indigo-700 pl-16">
+                → 실제 시각: {editedWallClock.date} {time}
+              </p>
+            )}
             <DiffRow label="상태" before={game.active !== false ? "활성" : "비활성"} after={active ? "활성" : "비활성"} />
           </>
         )}
@@ -771,6 +792,12 @@ function GameEditForm({
             게임입니다. 변경하면 N차전 번호와 날짜 필터 결과가 달라질 수
             있습니다.
           </p>
+          {editedWallClock.crossedMidnight && (
+            <p className="text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2">
+              이 기록은 실제로는 <strong>{editedWallClock.date} {time}</strong>에
+              해당합니다 (게임 밤 기준 날짜는 {date}).
+            </p>
+          )}
 
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input

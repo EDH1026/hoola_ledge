@@ -11,7 +11,7 @@ import {
 } from "@/lib/stats";
 import { simplifiedSettlements } from "@/lib/settle";
 import { activeGames } from "@/lib/games";
-import { currentQuarterKey, formatQuarterKey } from "@/lib/time";
+import { currentQuarterKey, formatQuarterKey, gameWallClock } from "@/lib/time";
 import { format } from "date-fns";
 import { GAME_TYPE_LABELS, GAME_TYPES } from "@/lib/types";
 import { GameTypeBadge, ResultBadge, StreakBadge, TierBadge } from "@/components/badges";
@@ -331,25 +331,35 @@ export default async function DashboardPage() {
           <p className="text-sm text-slate-400">아직 기록된 게임이 없습니다.</p>
         ) : (
           <ul className="divide-y divide-slate-100">
-            {recentGames.map((g) => (
-              <li key={g.id} className="py-2.5 flex flex-wrap items-center justify-between gap-2 text-sm">
-                <span className="flex items-center gap-2">
-                  <span className="text-slate-500">{format(new Date(g.date), "yyyy-MM-dd")}</span>
-                  <GameTypeBadge gameType={g.gameType} />
-                </span>
-                <span>
-                  <span className="text-emerald-600 font-medium">
-                    {nameOf(nameMap, g.winnerId)}
+            {recentGames.map((g) => {
+              // v2.18 (PRD §22) — show the real calendar date this game was
+              // played on, not the business-day group key it's filed under.
+              const wallClock = gameWallClock(g.date, g.time);
+              return (
+                <li
+                  key={g.id}
+                  className="py-2.5 flex flex-wrap items-center justify-between gap-2 text-sm"
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="text-slate-500">
+                      {format(new Date(wallClock.date), "yyyy-MM-dd")}
+                    </span>
+                    <GameTypeBadge gameType={g.gameType} />
                   </span>
-                  <span className="text-slate-400 mx-1">Win · Lose</span>
-                  <span className="text-red-500 font-medium">
-                    {nameOf(nameMap, g.loserId)}
+                  <span>
+                    <span className="text-emerald-600 font-medium">
+                      {nameOf(nameMap, g.winnerId)}
+                    </span>
+                    <span className="text-slate-400 mx-1">Win · Lose</span>
+                    <span className="text-red-500 font-medium">
+                      {nameOf(nameMap, g.loserId)}
+                    </span>
+                    <span className="text-slate-400 ml-1">· {g.points ?? 1}점</span>
                   </span>
-                  <span className="text-slate-400 ml-1">· {g.points ?? 1}점</span>
-                </span>
-                <span className="text-slate-400">참가 {g.attendeeIds.length}명</span>
-              </li>
-            ))}
+                  <span className="text-slate-400">참가 {g.attendeeIds.length}명</span>
+                </li>
+              );
+            })}
           </ul>
         )}
         <Link
