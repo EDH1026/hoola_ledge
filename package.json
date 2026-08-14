@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "verify:tiers": "npx tsx scripts/verify-tiers.ts"
+    "verify:tiers": "npx tsx scripts/verify-tiers.ts",
+    "verify:business-day": "npx tsx scripts/verify-business-day.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

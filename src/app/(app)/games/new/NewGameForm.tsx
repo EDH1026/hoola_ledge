@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   DndContext,
   DragEndEvent,
@@ -109,8 +110,8 @@ export default function NewGameForm({
   const [points, setPoints] = useState(1);
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isSaving, startTransition] = useTransition();
+  const router = useRouter();
 
   // dnd-kit assigns internal accessibility ids (aria-describedby) via a
   // module-level counter that isn't guaranteed to match between the server
@@ -159,7 +160,6 @@ export default function NewGameForm({
 
   function toggleAttendee(id: string) {
     setPendingResult(null);
-    setSuccessMsg(null);
     setTapSelectedId(null);
     setAttendeeIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
@@ -190,7 +190,6 @@ export default function NewGameForm({
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     setError(null);
-    setSuccessMsg(null);
     setTapSelectedId(null);
     setPendingResult({ loserId: String(active.id), winnerId: String(over.id) });
   }
@@ -205,7 +204,6 @@ export default function NewGameForm({
       return;
     }
     setError(null);
-    setSuccessMsg(null);
     if (tapSelectedId === null) {
       setTapSelectedId(id);
       return;
@@ -231,14 +229,12 @@ export default function NewGameForm({
           points,
           note,
         });
-        setSuccessMsg(
-          `기록 완료: ${nameMap.get(pending.loserId)} → ${nameMap.get(
-            pending.winnerId
-          )}에게 ${points}점 (${GAME_TYPE_LABELS[gameType]})`
-        );
-        setPendingResult(null);
-        setNote("");
-        setPoints(1);
+        // 기록이 끝나면 곧바로 게임 기록 탭으로 이동해 방금 쓴 게 제대로
+        // 반영됐는지 바로 확인할 수 있게 한다 — createGame이 이미
+        // revalidatePath("/games")를 호출하므로 이 push는 최신 데이터를
+        // 그대로 불러온다. refresh()는 그걸 한 번 더 보장하기 위한 안전장치.
+        router.push("/games");
+        router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "기록에 실패했습니다.");
       }
@@ -438,12 +434,6 @@ export default function NewGameForm({
             </button>
           </div>
         </section>
-      )}
-
-      {successMsg && (
-        <div className="rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm px-4 py-3">
-          {successMsg} — 같은 참가자로 다음 게임을 이어서 기록할 수 있습니다.
-        </div>
       )}
     </div>
   );

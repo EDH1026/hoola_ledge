@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { href: "/games", label: "게임" },
   { href: "/settlements", label: "정산" },
   { href: "/stats", label: "통계" },
+  { href: "/records", label: "통산기록" },
   { href: "/participants", label: "참가자", admin: true },
   { href: "/adjustments", label: "과거기록", admin: true },
   { href: "/rollback", label: "롤백", admin: true },

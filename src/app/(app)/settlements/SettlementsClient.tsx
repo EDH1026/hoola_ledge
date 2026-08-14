@@ -134,16 +134,6 @@ export default function SettlementsClient({
       </section>
 
       <section className="bg-white rounded-2xl border border-slate-200 p-5">
-        <h2 className="font-semibold mb-1">기부 기록</h2>
-        <p className="text-xs text-slate-400 mb-4">
-          계산된 채권-채무 관계와 무관하게, 누구든 원하는 상대에게 원하는
-          금액을 자유롭게 기부로 기록할 수 있습니다. 기부하는 사람의 잔액은
-          그만큼 줄고, 받는 사람의 잔액은 그만큼 늡니다.
-        </p>
-        <DonationForm participants={participants} onRecorded={handleRecorded} />
-      </section>
-
-      <section className="bg-white rounded-2xl border border-slate-200 p-5">
         <h2 className="font-semibold mb-1">변제</h2>
         <p className="text-xs text-slate-400 mb-4">
           위 카드에 제안된 조합과 다르게 실제로 갚았을 때(예: 다른 사람이 대신
@@ -152,6 +142,16 @@ export default function SettlementsClient({
           열면 정리된 채권-채무 관계가 알아서 새로 계산되어 반영됩니다.
         </p>
         <RepaymentForm participants={participants} onRecorded={handleRecorded} />
+      </section>
+
+      <section className="bg-white rounded-2xl border border-slate-200 p-5">
+        <h2 className="font-semibold mb-1">기부 기록</h2>
+        <p className="text-xs text-slate-400 mb-4">
+          계산된 채권-채무 관계와 무관하게, 누구든 원하는 상대에게 원하는
+          금액을 자유롭게 기부로 기록할 수 있습니다. 기부하는 사람의 잔액은
+          그만큼 줄고, 받는 사람의 잔액은 그만큼 늡니다.
+        </p>
+        <DonationForm participants={participants} onRecorded={handleRecorded} />
       </section>
     </div>
   );

@@ -23,7 +23,7 @@ import {
 } from "./storage";
 import { GameType, WritableSettlementType } from "./types";
 import { requireAdmin, isAdminSession } from "./admin";
-import { nowInSeoul, todayInSeoul, isWithinEditWindow } from "./time";
+import { nowInSeoulBusinessDay, todayInSeoul, isWithinEditWindow } from "./time";
 
 export type { RollbackCounts };
 
@@ -108,7 +108,9 @@ export async function createGame(input: {
   // Date/time are never taken from the client — the server's own clock at
   // record time is the source of truth (PRD 8.3), converted to Asia/Seoul
   // wall-clock since that's what every displayed date/time in this app means.
-  const { date, time } = nowInSeoul();
+  // `date` is the *business* date (v2.16: 06:00-30:00 day) so a session that
+  // runs past real midnight still gets grouped with the night it started.
+  const { date, time } = nowInSeoulBusinessDay();
 
   await insertGame({
     date,

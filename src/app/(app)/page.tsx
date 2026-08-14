@@ -5,13 +5,15 @@ import {
   computeHotColdPlayers,
   computeRecentForm,
   computeCurrentStreaks,
-  computeTodaySummary,
+  computeRecentGameDaysSummary,
   computeQuarterlyTiers,
+  GameTypeFilter,
 } from "@/lib/stats";
 import { simplifiedSettlements } from "@/lib/settle";
 import { activeGames } from "@/lib/games";
 import { currentQuarterKey, formatQuarterKey } from "@/lib/time";
 import { format } from "date-fns";
+import { GAME_TYPE_LABELS, GAME_TYPES } from "@/lib/types";
 import { GameTypeBadge, ResultBadge, StreakBadge, TierBadge } from "@/components/badges";
 
 export const dynamic = "force-dynamic";
@@ -31,22 +33,30 @@ export default async function DashboardPage() {
     .slice(0, 6);
   const transactions = simplifiedSettlements(db.games, db.settlements, db.adjustments);
 
-  const today = computeTodaySummary(db.participants, db.games);
+  const recentDays = computeRecentGameDaysSummary(db.participants, db.games);
   const { hot, cold } = computeHotColdPlayers(db.participants, db.games);
 
-  // v2.15 — 이번 분기 통합 티어 상위 3명 (PRD §16.7). 아직 이번 분기 기록이
+  // v2.16 — 통합 + 종목별(훌라/시타델/젝스님트) 이번 분기 티어 상위 3명씩
+  // (PRD §16.7 / §18). 각 종목마다 별도로 fold하고, 아직 이번 분기 기록이
   // 없으면(예: 분기 첫날) 데이터가 있는 가장 최근 분기로 대신 보여준다 —
-  // /stats 분기 선택의 기본값 로직과 동일한 fallback.
-  const tierByQuarter = computeQuarterlyTiers(db.participants, db.games, "all");
-  const tierQuarters = Array.from(tierByQuarter.keys()).sort().reverse();
-  const tierQuarter = tierQuarters.includes(currentQuarterKey())
-    ? currentQuarterKey()
-    : tierQuarters[0] ?? null;
-  const tierTop3 = tierQuarter
-    ? (tierByQuarter.get(tierQuarter) ?? [])
-        .filter((r) => r.tier !== "unranked")
-        .slice(0, 3)
-    : [];
+  // /records 분기 선택의 기본값 로직과 동일한 fallback.
+  const tierGameTypes: GameTypeFilter[] = ["all", ...GAME_TYPES];
+  const tierBlocks = tierGameTypes.map((gt) => {
+    const byQuarter = computeQuarterlyTiers(db.participants, db.games, gt);
+    const quarters = Array.from(byQuarter.keys()).sort().reverse();
+    const quarter = quarters.includes(currentQuarterKey())
+      ? currentQuarterKey()
+      : quarters[0] ?? null;
+    const top3 = quarter
+      ? (byQuarter.get(quarter) ?? []).filter((r) => r.tier !== "unranked").slice(0, 3)
+      : [];
+    return {
+      gameType: gt,
+      label: gt === "all" ? "통합" : GAME_TYPE_LABELS[gt],
+      quarter,
+      top3,
+    };
+  });
   const activeParticipants = db.participants.filter((p) => p.active);
   const formById = new Map(
     computeRecentForm(activeParticipants, db.games, 5).map((f) => [f.id, f])
@@ -75,54 +85,72 @@ export default async function DashboardPage() {
         </Link>
       </div>
 
-      <div className="rounded-xl bg-slate-900 text-white px-4 py-3 text-sm flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="font-semibold">오늘의 요약</span>
-        {today.gameCount === 0 ? (
-          <span className="text-slate-300">오늘은 아직 기록된 게임이 없습니다.</span>
+      <div className="rounded-xl bg-slate-900 text-white px-4 py-3 text-sm space-y-2">
+        <span className="font-semibold">최근 경기일 요약</span>
+        {recentDays.length === 0 ? (
+          <p className="text-slate-300">아직 기록된 게임이 없습니다.</p>
         ) : (
-          <span className="text-slate-300">
-            오늘 {today.gameCount}게임 진행
-            {today.topWinner && (
-              <>
-                {" "}
-                · 오늘의 최다 승자{" "}
-                <span className="text-white font-medium">
-                  {today.topWinner.name} ({today.topWinner.wins}승)
-                </span>
-              </>
-            )}
-          </span>
+          <ul className="space-y-1">
+            {recentDays.map((d) => (
+              <li
+                key={d.date}
+                className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-slate-300"
+              >
+                <span className="text-white font-medium">{d.date}</span>
+                <span>{d.gameCount}게임</span>
+                {d.topWinners.length > 0 && (
+                  <>
+                    <span className="text-slate-500">·</span>
+                    <span>
+                      최다 승자{" "}
+                      <span className="text-white font-medium">
+                        {d.topWinners.map((w) => w.name).join(", ")}
+                      </span>{" "}
+                      (득실차 {d.margin > 0 ? "+" : ""}
+                      {d.margin})
+                    </span>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
         )}
       </div>
 
-      {tierQuarter && (
-        <section className="bg-white rounded-2xl border border-slate-200 p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold">
-              {formatQuarterKey(tierQuarter)} 티어 (통합)
-            </h2>
-            <Link href="/stats" className="text-xs text-slate-500 hover:underline">
-              전체 보기 →
-            </Link>
-          </div>
-          {tierTop3.length === 0 ? (
-            <p className="text-sm text-slate-400">
-              아직 배치를 완료한 참가자가 없습니다.
-            </p>
-          ) : (
-            <ul className="flex flex-wrap gap-x-6 gap-y-2">
-              {tierTop3.map((row, i) => (
-                <li key={row.id} className="flex items-center gap-2 text-sm">
-                  <span className="w-4 text-slate-400">{i + 1}</span>
-                  <span className="font-medium">{row.name}</span>
-                  <TierBadge tier={row.tier} size="sm" />
-                  <span className="text-slate-400">{Math.round(row.tr)} TR</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
+      <section className="bg-white rounded-2xl border border-slate-200 p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-semibold">이번 분기 티어 (통합 · 종목별)</h2>
+          <Link href="/records" className="text-xs text-slate-500 hover:underline">
+            통산기록 전체 보기 →
+          </Link>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {tierBlocks.map((block) => (
+            <div key={block.gameType}>
+              <p className="text-xs font-medium text-slate-400 mb-2">
+                {block.label}
+                {block.quarter ? ` · ${formatQuarterKey(block.quarter)}` : ""}
+              </p>
+              {block.top3.length === 0 ? (
+                <p className="text-sm text-slate-400">
+                  아직 배치를 완료한 참가자가 없습니다.
+                </p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {block.top3.map((row, i) => (
+                    <li key={row.id} className="flex items-center gap-2 text-sm">
+                      <span className="w-4 text-slate-400">{i + 1}</span>
+                      <span className="font-medium">{row.name}</span>
+                      <TierBadge tier={row.tier} size="sm" />
+                      <span className="text-slate-400">{Math.round(row.tr)} TR</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
 
       <div className="grid gap-6 md:grid-cols-2">
         <section className="bg-white rounded-2xl border border-slate-200 p-5">

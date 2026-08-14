@@ -5,9 +5,9 @@ import {
   startOfYear,
   format,
 } from "date-fns";
-import { GameResult, GameType, GAME_TYPES } from "./types";
+import { GameResult, GameType } from "./types";
 import { activeGames } from "./games";
-import { todayInSeoul, quarterKeyOf } from "./time";
+import { todayInSeoul, quarterKeyOf, addDaysToIsoDate } from "./time";
 
 export interface ParticipantLike {
   id: string;
@@ -287,9 +287,11 @@ export function computeHotColdPlayers(
   games: GameResult[]
 ): { hot: HotColdEntry[]; cold: HotColdEntry[] } {
   const active = activeGames(games);
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - HOT_COLD_RECENT_WINDOW_DAYS);
-  const recentGames = active.filter((g) => new Date(g.date) >= cutoff);
+  // String-compared against a Seoul business-date cutoff, not new Date()
+  // arithmetic — see filterByDatePreset's comment for why: a UTC-parsed
+  // Date comparison can shift this window's boundary by up to a day.
+  const cutoff = addDaysToIsoDate(todayInSeoul(), -(HOT_COLD_RECENT_WINDOW_DAYS - 1));
+  const recentGames = active.filter((g) => g.date >= cutoff);
 
   const careerStats = computeParticipantStats(participants, active);
   const recentStats = computeParticipantStats(participants, recentGames);
@@ -322,31 +324,67 @@ export function computeHotColdPlayers(
   return { hot, cold };
 }
 
-export interface TodaySummary {
-  date: string; // yyyy-MM-dd, Asia/Seoul "today"
-  gameCount: number;
-  topWinner: { id: string; name: string; wins: number } | null;
+export interface RecentGameDayWinner {
+  id: string;
+  name: string;
+  netPoints: number; // this day's pointsWon - pointsLost for this participant
 }
 
-/** Summary of today's (Asia/Seoul) games — for the dashboard's "오늘의 요약". */
-export function computeTodaySummary(
+export interface RecentGameDaySummary {
+  date: string; // yyyy-MM-dd business date (§ v2.16 06:00-30:00 day)
+  gameCount: number;
+  topWinners: RecentGameDayWinner[]; // every participant tied at the day's max net points (공동 1위)
+  margin: number; // 득실차 — the max net points value shared by topWinners
+}
+
+const RECENT_GAME_DAYS_COUNT = 3;
+
+/**
+ * The most recent (up to 3) business dates that actually have an active
+ * game, most recent first — days with zero games are skipped entirely rather
+ * than shown as empty. Replaces computeTodaySummary/TodaySummary (v2.16):
+ * "오늘의 요약" only ever showed anything on days someone actually played, so
+ * this generalizes it to "however many recent game days" instead of being
+ * blank whenever today itself has no games yet.
+ *
+ * Each day's "최다 승자" is ranked by that day's net points (points-weighted
+ * pointsWon - pointsLost), not win count, so a tie (공동 1위) and the
+ * displayed 득실차 always describe the same number.
+ */
+export function computeRecentGameDaysSummary(
   participants: ParticipantLike[],
   games: GameResult[]
-): TodaySummary {
-  const today = todayInSeoul();
-  const todaysGames = activeGames(games).filter((g) => g.date === today);
-  const stats = computeParticipantStats(participants, todaysGames).filter(
-    (s) => s.wins > 0
-  );
-  const topWinner = stats.length
-    ? stats.reduce((best, s) => (s.wins > best.wins ? s : best))
-    : null;
+): RecentGameDaySummary[] {
+  const active = activeGames(games);
+  const byDate = new Map<string, GameResult[]>();
+  for (const g of active) {
+    const list = byDate.get(g.date);
+    if (list) list.push(g);
+    else byDate.set(g.date, [g]);
+  }
 
-  return {
-    date: today,
-    gameCount: todaysGames.length,
-    topWinner: topWinner ? { id: topWinner.id, name: topWinner.name, wins: topWinner.wins } : null,
-  };
+  const dates = Array.from(byDate.keys())
+    .sort((a, b) => b.localeCompare(a))
+    .slice(0, RECENT_GAME_DAYS_COUNT);
+
+  const nameOf = new Map(participants.map((p) => [p.id, p.name]));
+  const nameFor = (id: string) => nameOf.get(id) ?? "(삭제된 참가자)";
+
+  return dates.map((date) => {
+    const dayGames = byDate.get(date)!;
+    const net = new Map<string, number>();
+    for (const g of dayGames) {
+      const points = g.points ?? 1;
+      net.set(g.winnerId, (net.get(g.winnerId) ?? 0) + points);
+      net.set(g.loserId, (net.get(g.loserId) ?? 0) - points);
+    }
+    const maxNet = Math.max(...net.values());
+    const topWinners = Array.from(net.entries())
+      .filter(([, n]) => n === maxNet)
+      .map(([id, n]) => ({ id, name: nameFor(id), netPoints: n }));
+
+    return { date, gameCount: dayGames.length, topWinners, margin: maxNet };
+  });
 }
 
 // ---------- v2.15: quarterly performance-index tiers ----------
@@ -716,46 +754,7 @@ export function computeNemesisAndVictim(
   });
 }
 
-export interface GameTypeParticipantStat {
-  id: string;
-  name: string;
-  gameType: GameType;
-  appearances: number;
-  wins: number;
-  losses: number;
-  winRate: number; // 승률A
-  winRateB: number; // 승률B
-  netPoints: number;
-}
-
-/** Per-participant record broken down by game type (the "champion mastery" view) — only includes rows where the participant has at least one decisive game of that type. */
-export function computeGameTypeStats(
-  participants: ParticipantLike[],
-  games: GameResult[]
-): GameTypeParticipantStat[] {
-  const result: GameTypeParticipantStat[] = [];
-  for (const gt of GAME_TYPES) {
-    const gamesOfType = filterGamesByType(games, gt);
-    const stats = computeParticipantStats(participants, gamesOfType);
-    for (const s of stats) {
-      if (s.wins + s.losses === 0) continue;
-      result.push({
-        id: s.id,
-        name: s.name,
-        gameType: gt,
-        appearances: s.appearances,
-        wins: s.wins,
-        losses: s.losses,
-        winRate: s.winRate,
-        winRateB: s.winRateB,
-        netPoints: s.netPoints,
-      });
-    }
-  }
-  return result;
-}
-
-// ---------- v2.10/v2.13: records / hall of fame ----------
+// ---------- v2.10/v2.13/v2.16: records / hall of fame (명예의 전당) ----------
 
 export interface RecordTierEntry {
   id: string;
@@ -774,11 +773,16 @@ export interface RecordTier {
  * Groups entries into up to `tiers` distinct-value bands using dense ranking
  * (1, 2, 3 — not 1, 1, 3), so every tied entry at a value shares that band's
  * rank ("공동 1위" etc.) and the next distinct value is simply the next rank,
- * not skipped the way competition ranking would.
+ * not skipped the way competition ranking would. `direction: "asc"` ranks the
+ * *smallest* values first (e.g. "최저 순득점"), otherwise (default) largest first.
  */
-function topTiers(entries: RecordTierEntry[], tiers = 3): RecordTier[] {
+function topTiers(
+  entries: RecordTierEntry[],
+  tiers = 3,
+  direction: "desc" | "asc" = "desc"
+): RecordTier[] {
   const distinctValues = Array.from(new Set(entries.map((e) => e.value)))
-    .sort((a, b) => b - a)
+    .sort((a, b) => (direction === "desc" ? b - a : a - b))
     .slice(0, tiers);
   return distinctValues.map((value, i) => ({
     rank: i + 1,
@@ -791,6 +795,9 @@ export interface RecordsSummary {
   longestLossStreak: RecordTier[];
   mostWinsInOneDay: RecordTier[];
   mostAppearances: RecordTier[];
+  highestNetPoints: RecordTier[]; // v2.16 — career netPoints leaderboard, top
+  lowestNetPoints: RecordTier[]; // v2.16 — career netPoints leaderboard, bottom
+  mostGamesInOneDay: RecordTier[]; // v2.16 — NOT a per-participant record: the busiest single day, by total games played
 }
 
 /**
@@ -889,12 +896,31 @@ export function computeRecords(
   const appearanceEntries: RecordTierEntry[] = stats
     .filter((s) => s.appearances > 0)
     .map((s) => ({ id: s.id, name: s.name, value: s.appearances }));
+  const netPointsEntries: RecordTierEntry[] = stats
+    .filter((s) => s.appearances > 0)
+    .map((s) => ({ id: s.id, name: s.name, value: s.netPoints }));
+
+  // v2.16 — a team-wide record, not a per-participant one: which single
+  // (business) day had the most games played, total. Entries carry no
+  // participant id/name — id/name are both set to the date itself so
+  // RecordCategory's shared rendering ("{name} · {value}{unit}") still works
+  // without implying any one person "holds" this record.
+  const gamesPerDay = new Map<string, number>();
+  for (const g of active) {
+    gamesPerDay.set(g.date, (gamesPerDay.get(g.date) ?? 0) + 1);
+  }
+  const dayGameCountEntries: RecordTierEntry[] = Array.from(gamesPerDay.entries()).map(
+    ([date, count]) => ({ id: date, name: date, value: count })
+  );
 
   return {
     longestWinStreak: topTiers(winStreakEntries),
     longestLossStreak: topTiers(lossStreakEntries),
     mostWinsInOneDay: topTiers(dayWinEntries),
     mostAppearances: topTiers(appearanceEntries),
+    highestNetPoints: topTiers(netPointsEntries, 3, "desc"),
+    lowestNetPoints: topTiers(netPointsEntries, 3, "asc"),
+    mostGamesInOneDay: topTiers(dayGameCountEntries),
   };
 }
 
@@ -970,6 +996,54 @@ export function groupGamesByPeriod(
   );
 }
 
+export interface CumulativeNetPointsRow {
+  label: string;
+  values: Record<string, number>; // participantId -> cumulative net points through the end of this bucket
+}
+
+/**
+ * Per-participant cumulative net points (points-weighted, i.e. the same
+ * `points`-aware 순점수 used everywhere else in this app — earlier versions
+ * of this trend counted every win/loss as ±1 regardless of `points`, which
+ * was inconsistent with the rest of the app and is fixed here as part of the
+ * v2.16 rework), sampled once per period bucket instead of once per game —
+ * so this shares its "추이 단위" (day/week/month/year) with
+ * groupGamesByPeriod's game-count trend rather than plotting one point per
+ * individual game, which reads poorly once game counts get large.
+ */
+export function computeCumulativeNetPointsTrend(
+  games: GameResult[],
+  grouping: PeriodGrouping
+): CumulativeNetPointsRow[] {
+  const sorted = [...activeGames(games)].sort((a, b) =>
+    a.date === b.date ? a.createdAt.localeCompare(b.createdAt) : a.date.localeCompare(b.date)
+  );
+
+  const running = new Map<string, number>();
+  const rows: CumulativeNetPointsRow[] = [];
+  let currentKey: string | null = null;
+  let currentRow: CumulativeNetPointsRow | null = null;
+
+  for (const g of sorted) {
+    const d = new Date(g.date);
+    const key = bucketStart(d, grouping).toISOString();
+    const points = g.points ?? 1;
+    running.set(g.winnerId, (running.get(g.winnerId) ?? 0) + points);
+    running.set(g.loserId, (running.get(g.loserId) ?? 0) - points);
+
+    if (key !== currentKey) {
+      currentKey = key;
+      currentRow = { label: bucketLabel(d, grouping), values: {} };
+      rows.push(currentRow);
+    }
+    // Overwritten on every game within the same bucket, so it ends up
+    // holding the running totals as of the *end* of this bucket.
+    currentRow!.values = Object.fromEntries(running.entries());
+  }
+
+  return rows;
+}
+
 export type GameTypeFilter = GameType | "all";
 
 export function filterGamesByType(
@@ -980,12 +1054,14 @@ export function filterGamesByType(
   return games.filter((g) => g.gameType === gameType);
 }
 
-export type RangePreset = "7d" | "30d" | "90d" | "year" | "all" | "custom";
+export type RangePreset = "today" | "7d" | "30d" | "90d" | "year" | "all" | "custom";
 
 export interface CustomRange {
   start?: string; // yyyy-MM-dd, inclusive
   end?: string; // yyyy-MM-dd, inclusive
 }
+
+const PRESET_DAYS: Partial<Record<RangePreset, number>> = { "7d": 7, "30d": 30, "90d": 90 };
 
 /**
  * Generic date-range filter — works on anything with a `.date` string, not
@@ -993,10 +1069,12 @@ export interface CustomRange {
  * donation ranking) without duplicating the date math.
  *
  * `custom` is only consulted when `preset === "custom"`. Every `.date` in
- * this app is already a plain "yyyy-MM-dd" Asia/Seoul wall-clock string
- * (never a UTC instant), so the custom range compares those strings directly
- * rather than going through `new Date(...)`, which would parse as UTC
- * midnight and can shift the boundary by a day.
+ * this app is already a plain "yyyy-MM-dd" Asia/Seoul business-date string
+ * (never a UTC instant — see time.ts's v2.16 06:00-30:00 day redefinition),
+ * so every preset here compares those strings directly against a cutoff also
+ * derived as a string, rather than going through `new Date(...)`, which
+ * parses as UTC midnight and can shift any boundary by up to a day depending
+ * on where the Node process happens to run.
  */
 export function filterByDatePreset<T extends { date: string }>(
   items: T[],
@@ -1013,21 +1091,20 @@ export function filterByDatePreset<T extends { date: string }>(
   }
 
   if (preset === "all") return items;
-  const now = new Date();
-  let days: number | null = null;
-  if (preset === "7d") days = 7;
-  else if (preset === "30d") days = 30;
-  else if (preset === "90d") days = 90;
 
+  const today = todayInSeoul();
+  if (preset === "today") {
+    return items.filter((it) => it.date === today);
+  }
   if (preset === "year") {
-    const yearStart = startOfYear(now);
-    return items.filter((it) => new Date(it.date) >= yearStart);
+    const yearStart = `${today.slice(0, 4)}-01-01`;
+    return items.filter((it) => it.date >= yearStart);
   }
 
+  const days = PRESET_DAYS[preset];
   if (days) {
-    const cutoff = new Date(now);
-    cutoff.setDate(cutoff.getDate() - days);
-    return items.filter((it) => new Date(it.date) >= cutoff);
+    const cutoff = addDaysToIsoDate(today, -(days - 1));
+    return items.filter((it) => it.date >= cutoff);
   }
 
   return items;

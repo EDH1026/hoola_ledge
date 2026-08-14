@@ -17,9 +17,16 @@ export function nowInSeoul(): { date: string; time: string } {
   return { date: `${y}-${m}-${day}`, time: `${h}:${min}` };
 }
 
-/** Today's date in Asia/Seoul as "yyyy-MM-dd" — replacement for the old UTC-based todayIso(). */
+/**
+ * Today's *business* date in Asia/Seoul as "yyyy-MM-dd" (v2.16: 06:00-30:00
+ * day boundary — see the helpers further down this file). Every "오늘" in
+ * this app (game list default filter, adjustment/settlement default dates,
+ * quarter-key fallback) means this, not the raw calendar date, so this
+ * function's result changed meaning in v2.16 even though its name didn't.
+ */
 export function todayInSeoul(): string {
-  return nowInSeoul().date;
+  const { date, time } = nowInSeoul();
+  return businessDateFromWallClock(date, time);
 }
 
 /**
@@ -92,4 +99,62 @@ export function currentQuarterKey(): string {
 export function formatQuarterKey(key: string): string {
   const [year, q] = key.split("-Q");
   return `${year}년 ${q}분기`;
+}
+
+// ---------- v2.16: business-day redefinition (06:00-30:00) ----------
+//
+// This group's game nights routinely run past real midnight, so every
+// "which day does this belong to" computation in the app (game dates,
+// "오늘" filters/summaries, adjustment/settlement default dates, quarter
+// boundaries) treats 06:00-29:59 wall-clock as one day, not the calendar
+// day. A record made at 05:59 belongs to the *previous* calendar date; one
+// made at 06:00 belongs to the current one. `nowInSeoul()` above is left
+// untouched (true calendar date/time) because some callers genuinely need a
+// real instant (e.g. the admin rollback screen's cutoff picker) — everything
+// that means "game day" should go through the helpers below instead.
+export const BUSINESS_DAY_START_HOUR = 6;
+
+/**
+ * Pure calendar-date arithmetic on a "yyyy-MM-dd" string, deliberately never
+ * `new Date(date)` (see quarterKeyOf's comment above for why that parses as
+ * UTC midnight and can shift by a day) — Date.UTC/getUTC* here are only used
+ * as a day-counting scratchpad, never compared against a wall-clock instant.
+ */
+export function addDaysToIsoDate(date: string, days: number): string {
+  const y = Number(date.slice(0, 4));
+  const m = Number(date.slice(5, 7));
+  const d = Number(date.slice(8, 10));
+  const shifted = new Date(Date.UTC(y, m - 1, d) + days * 86400000);
+  const yy = shifted.getUTCFullYear();
+  const mm = String(shifted.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(shifted.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+/** True calendar date + "HH:mm" -> business date, per the 06:00 rollover rule above. */
+export function businessDateFromWallClock(date: string, time: string): string {
+  const hour = Number(time.slice(0, 2));
+  return hour >= BUSINESS_DAY_START_HOUR ? date : addDaysToIsoDate(date, -1);
+}
+
+/**
+ * Current business date + true wall-clock time in Asia/Seoul. Use this (not
+ * nowInSeoul()) wherever "now" means "which game day is this" — e.g. stamping
+ * a newly-recorded game's `date`. The `time` returned is still the real
+ * clock reading (e.g. "02:15"), never shifted; only `date` is remapped.
+ */
+export function nowInSeoulBusinessDay(): { date: string; time: string } {
+  const { date, time } = nowInSeoul();
+  return { date: businessDateFromWallClock(date, time), time };
+}
+
+/**
+ * Minutes since the 06:00 business-day boundary, for ordering "HH:mm" times
+ * that cross real midnight within one business day — e.g. a 01:30 game must
+ * sort *after* a 22:00 game from the same game night, not before it. "06:00"
+ * -> 0, "05:59" -> 1439.
+ */
+export function minutesSinceBusinessDayStart(time: string): number {
+  const [hh, mm] = time.split(":").map(Number);
+  return ((hh - BUSINESS_DAY_START_HOUR) * 60 + mm + 1440) % 1440;
 }

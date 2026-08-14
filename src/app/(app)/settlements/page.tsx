@@ -148,11 +148,6 @@ export default async function SettlementsPage({
         </p>
       </div>
 
-      <SettlementsClient
-        transactions={transactions}
-        participants={participants.map((p) => ({ id: p.id, name: p.name }))}
-      />
-
       <section className="bg-white rounded-2xl border border-slate-200 p-5">
         <h2 className="font-semibold mb-4">참가자별 순 잔액</h2>
         {balanceList.length === 0 ? (
@@ -185,6 +180,11 @@ export default async function SettlementsPage({
           이 모두 반영된 값입니다.
         </p>
       </section>
+
+      <SettlementsClient
+        transactions={transactions}
+        participants={participants.map((p) => ({ id: p.id, name: p.name }))}
+      />
 
       <section className="bg-white rounded-2xl border border-slate-200 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">

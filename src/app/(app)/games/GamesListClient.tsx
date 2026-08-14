@@ -702,7 +702,9 @@ function GameEditForm({
         <>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-slate-500 mb-1">날짜</label>
+              <label className="block text-xs text-slate-500 mb-1">
+                날짜 (게임일 · 06:00 기준)
+              </label>
               <input
                 type="date"
                 value={date}
@@ -711,7 +713,7 @@ function GameEditForm({
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-500 mb-1">시간</label>
+              <label className="block text-xs text-slate-500 mb-1">시간 (24시간제)</label>
               <input
                 type="time"
                 value={time}
@@ -721,8 +723,10 @@ function GameEditForm({
             </div>
           </div>
           <p className="text-xs text-amber-700">
-            ※ 날짜·시간은 이 관리자 수정 화면에서만 바꿀 수 있어요. 변경하면 N차전
-            번호와 날짜 필터 결과가 달라질 수 있습니다.
+            ※ 날짜·시간은 이 관리자 수정 화면에서만 바꿀 수 있어요. 하루는
+            06:00~다음 날 06:00(30:00) 기준입니다 — 예: 8/15 04:00은 8/14의
+            게임입니다. 변경하면 N차전 번호와 날짜 필터 결과가 달라질 수
+            있습니다.
           </p>
 
           <label className="flex items-center gap-2 text-sm text-slate-700">

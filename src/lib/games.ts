@@ -1,4 +1,5 @@
 import { GameResult } from "./types";
+import { minutesSinceBusinessDayStart } from "./time";
 
 /** A game is active unless explicitly soft-deleted; absent field = active (legacy records). */
 export function isActiveGame(g: GameResult): boolean {
@@ -10,14 +11,21 @@ export function activeGames(games: GameResult[]): GameResult[] {
   return games.filter(isActiveGame);
 }
 
-// Sort key for games played on the same day: by wall-clock time first (legacy
-// records with no `time` sort first, matching the createdAt-based ordering
-// they already had before this field existed), then by createdAt to break
-// ties deterministically. Exported so any list that displays games alongside
-// their N차전 number can sort with the exact same key — otherwise display
-// order and the numbers shown next to each row could disagree.
+// Sort key for games played on the same (business) day: by wall-clock time
+// first (legacy records with no `time` sort first, matching the
+// createdAt-based ordering they already had before this field existed), then
+// by createdAt to break ties deterministically. Exported so any list that
+// displays games alongside their N차전 number can sort with the exact same
+// key — otherwise display order and the numbers shown next to each row could
+// disagree.
+//
+// v2.16: the time component sorts by *minutes since the 06:00 business-day
+// boundary*, not the raw "HH:mm" string — a game logged at 01:30 belongs to
+// the same game night as one logged at 22:00 earlier that evening and must
+// sort after it, not before (a plain string compare would put "01:30" first).
 export function withinDayKey(g: GameResult): string {
-  return `${g.time ?? ""}|${g.createdAt}`;
+  const minuteKey = g.time ? minutesSinceBusinessDayStart(g.time) + 1 : 0;
+  return `${String(minuteKey).padStart(4, "0")}|${g.createdAt}`;
 }
 
 /**
