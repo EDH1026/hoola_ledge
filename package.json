@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "verify:tiers": "npx tsx scripts/verify-tiers.ts",
-    "verify:business-day": "npx tsx scripts/verify-business-day.ts"
+    "verify:business-day": "npx tsx scripts/verify-business-day.ts",
+    "backfill:business-day": "npx tsx scripts/backfill-business-day.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

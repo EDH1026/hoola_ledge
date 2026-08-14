@@ -4,7 +4,12 @@ import { useMemo, useState, useTransition } from "react";
 import { format } from "date-fns";
 import { deleteGame, hardDeleteGame, updateGame } from "@/lib/actions";
 import { isActiveGame, withinDayKey } from "@/lib/games";
-import { todayInSeoul, isWithinEditWindow } from "@/lib/time";
+import {
+  todayInSeoul,
+  isWithinEditWindow,
+  BUSINESS_DAY_START_HOUR,
+  addDaysToIsoDate,
+} from "@/lib/time";
 import {
   GAME_TYPE_LABELS,
   GAME_TYPES,
@@ -437,6 +442,11 @@ function GameEditForm({
   const [step, setStep] = useState<"form" | "confirm">("form");
   const [error, setError] = useState<string | null>(null);
   const [isSaving, startTransition] = useTransition();
+  // v2.17 §20.3 — one-off dismissal for the business-day warning below, so
+  // clicking its "맞추기" button doesn't immediately re-trigger the same
+  // warning against the now-shifted date. Any further edit to `time` clears
+  // it, so a genuinely new value gets checked fresh.
+  const [businessDayFixApplied, setBusinessDayFixApplied] = useState(false);
 
   const selectableAttendees = participants.filter((p) => attendeeIds.includes(p.id));
 
@@ -503,6 +513,18 @@ function GameEditForm({
 
   const dateOrTimeChanged = date !== game.date || time !== (game.time ?? "00:00");
 
+  // v2.17 §20.3 — this can't know whether `date` already *is* the intended
+  // business date (there's no separate "calendar date" field to compare
+  // against once the admin is typing both by hand), so it's a nudge on every
+  // pre-06:00 time, not a hard rule: PRD §11's admin discretion stays
+  // untouched, and the backfill script (src/lib/backfill.ts) already treats
+  // any date/time combo it wouldn't have produced itself as intentional.
+  const timeHour = Number(time.slice(0, 2));
+  const isPreBusinessDayBoundary = !Number.isNaN(timeHour) && timeHour < BUSINESS_DAY_START_HOUR;
+  const impliedBusinessDate = addDaysToIsoDate(date, -1);
+  const showBusinessDayWarning =
+    isAdmin && isPreBusinessDayBoundary && !businessDayFixApplied;
+
   if (step === "confirm") {
     return (
       <div className="rounded-xl border-2 border-slate-900 bg-white p-4 space-y-2.5">
@@ -532,6 +554,24 @@ function GameEditForm({
           <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
             날짜·시간을 바꾸면 N차전 번호와 날짜 필터 결과가 달라질 수 있습니다.
           </p>
+        )}
+        {showBusinessDayWarning && (
+          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-1.5">
+            <p>
+              시각이 06:00 이전입니다. 이 앱은 06:00~다음 날 06:00을 하루로
+              보므로, 이 기록은 보통 전날({impliedBusinessDate})에 속합니다.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setDate(impliedBusinessDate);
+                setBusinessDayFixApplied(true);
+              }}
+              className="rounded-lg bg-amber-100 text-amber-800 text-xs font-semibold px-2.5 py-1 hover:bg-amber-200 transition"
+            >
+              영업일 기준으로 맞추기 ({impliedBusinessDate})
+            </button>
+          </div>
         )}
         {error && <p className="text-sm text-red-600">{error}</p>}
 
@@ -717,7 +757,10 @@ function GameEditForm({
               <input
                 type="time"
                 value={time}
-                onChange={(e) => setTime(e.target.value)}
+                onChange={(e) => {
+                  setTime(e.target.value);
+                  setBusinessDayFixApplied(false);
+                }}
                 className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
               />
             </div>

@@ -6,15 +6,26 @@
 // getters or `toISOString()` slicing elsewhere in the app.
 const SEOUL_OFFSET_MS = 9 * 60 * 60 * 1000;
 
-/** Current wall-clock date/time in Asia/Seoul, as plain "yyyy-MM-dd" / "HH:mm" strings. */
-export function nowInSeoul(): { date: string; time: string } {
-  const d = new Date(Date.now() + SEOUL_OFFSET_MS);
+/**
+ * A UTC ISO instant (e.g. `createdAt`) -> the true Asia/Seoul calendar
+ * wall-clock reading, as plain "yyyy-MM-dd" / "HH:mm" strings. This is the
+ * one place that does the +9h offset math; `nowInSeoul()`, `formatInSeoul()`,
+ * and v2.17's `businessDateFromIso()` all go through it so there's a single
+ * source of truth for "what did the Seoul clock actually read at instant X".
+ */
+export function seoulWallClockFromIso(iso: string): { date: string; time: string } {
+  const d = new Date(new Date(iso).getTime() + SEOUL_OFFSET_MS);
   const y = d.getUTCFullYear();
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");
   const day = String(d.getUTCDate()).padStart(2, "0");
   const h = String(d.getUTCHours()).padStart(2, "0");
   const min = String(d.getUTCMinutes()).padStart(2, "0");
   return { date: `${y}-${m}-${day}`, time: `${h}:${min}` };
+}
+
+/** Current wall-clock date/time in Asia/Seoul, as plain "yyyy-MM-dd" / "HH:mm" strings. */
+export function nowInSeoul(): { date: string; time: string } {
+  return seoulWallClockFromIso(new Date().toISOString());
 }
 
 /**
@@ -54,13 +65,8 @@ export function seoulLocalToUtcIso(localDateTime: string): string {
 
 /** Formats a UTC ISO instant as Asia/Seoul "yyyy-MM-dd HH:mm", for display. */
 export function formatInSeoul(iso: string): string {
-  const d = new Date(new Date(iso).getTime() + SEOUL_OFFSET_MS);
-  const y = d.getUTCFullYear();
-  const mo = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  const h = String(d.getUTCHours()).padStart(2, "0");
-  const mi = String(d.getUTCMinutes()).padStart(2, "0");
-  return `${y}-${mo}-${day} ${h}:${mi}`;
+  const { date, time } = seoulWallClockFromIso(iso);
+  return `${date} ${time}`;
 }
 
 /**
@@ -135,6 +141,19 @@ export function addDaysToIsoDate(date: string, days: number): string {
 export function businessDateFromWallClock(date: string, time: string): string {
   const hour = Number(time.slice(0, 2));
   return hour >= BUSINESS_DAY_START_HOUR ? date : addDaysToIsoDate(date, -1);
+}
+
+/**
+ * A UTC ISO instant (typically `createdAt`, which no app feature ever
+ * rewrites) -> the business date that instant belongs to. v2.17's backfill
+ * (`src/lib/backfill.ts`) is built entirely on this: re-deriving a row's
+ * "correct" date from its immutable `createdAt` every time is what makes the
+ * backfill idempotent, unlike shifting `date` by one day whenever `time` is
+ * early (see PRD §20.2 for why that naive approach breaks on a second run).
+ */
+export function businessDateFromIso(iso: string): string {
+  const { date, time } = seoulWallClockFromIso(iso);
+  return businessDateFromWallClock(date, time);
 }
 
 /**
