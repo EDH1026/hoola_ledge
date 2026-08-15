@@ -52,7 +52,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             {admin ? (
               <form action={adminLogoutAction} className="flex items-center gap-1">
                 <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 text-amber-300 text-xs font-medium px-2.5 py-1 whitespace-nowrap">
-                  관리자 모드
+                  Admin
                 </span>
                 <button
                   type="submit"
@@ -66,7 +66,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                 href="/admin-login"
                 className="min-h-11 inline-flex items-center px-2 text-xs text-content-sub hover:text-content whitespace-nowrap rounded-lg hover:bg-slate-700"
               >
-                관리자 모드
+                Admin
               </Link>
             )}
             <form action={logoutAction}>

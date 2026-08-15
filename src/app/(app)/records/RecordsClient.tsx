@@ -362,8 +362,12 @@ function TierCard({ row }: { row: TierRow }) {
 
       {row.tier === "unranked" ? (
         <div>
+          {/* row.weight는 인원수로 보정한 기대값 가중치라 "0.2판"처럼 실제
+              참여 판수와 다른 소수 단위로 나온다 — 직관적이지 않으므로
+              배치 완료까지의 진행률(%)로 표시한다. 실제 참여 판수는 바로
+              아래 통계 줄의 "N판 참여"에 이미 나온다. */}
           <p className="text-xs text-content-muted mb-1 tabular-nums">
-            배치 중 ({row.weight.toFixed(1)}/{TIER_MIN_WEIGHT.toFixed(1)}판)
+            배치 중 (진행률 {(placementProgress * 100).toFixed(0)}%)
           </p>
           <div className="h-1.5 rounded-full bg-slate-700 overflow-hidden">
             <div
@@ -385,7 +389,6 @@ function TierCard({ row }: { row: TierRow }) {
         <span>승 지수 {row.winIndex.toFixed(2)}</span>
         <span>패 지수 {row.lossIndex.toFixed(2)}</span>
         <span>{row.games}판 참여</span>
-        <span>신뢰도 {(row.confidence * 100).toFixed(0)}%</span>
       </div>
     </Card>
   );

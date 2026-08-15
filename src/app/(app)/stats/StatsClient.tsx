@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, type CSSProperties } from "react";
+import { Fragment, useMemo, type CSSProperties } from "react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -376,6 +376,13 @@ export default function StatsClient({
                     >
                       상대 전적
                     </FilterChip>
+                    {h2hParticipantId === s.id && (
+                      <HeadToHeadInline
+                        participants={participants}
+                        games={filteredGames}
+                        participantId={s.id}
+                      />
+                    )}
                   </div>
                 ))}
             </div>
@@ -400,47 +407,59 @@ export default function StatsClient({
                     .slice()
                     .sort((a, b) => b.netPoints - a.netPoints)
                     .map((s) => (
-                      <tr
-                        key={s.id}
-                        className={`border-t border-line ${
-                          h2hParticipantId === s.id ? "bg-surface-raised" : ""
-                        }`}
-                      >
-                        <td className="py-2 pr-4 font-medium text-content">{s.name}</td>
-                        <td className="py-2 pr-4 text-content-muted">{s.appearances}</td>
-                        <td className="py-2 pr-4 text-emerald-400">{s.wins}</td>
-                        <td className="py-2 pr-4 text-content-muted">
-                          {s.appearances - s.wins - s.losses}
-                        </td>
-                        <td className="py-2 pr-4 text-lose">{s.losses}</td>
-                        <td className="py-2 pr-4 text-content-muted">
-                          {(s.winRate * 100).toFixed(0)}%
-                        </td>
-                        <td className="py-2 pr-4 text-content-muted">
-                          {(s.winRateB * 100).toFixed(0)}%
-                        </td>
-                        <td
-                          className={`py-2 pr-4 font-semibold ${
-                            s.netPoints > 0
-                              ? "text-emerald-400"
-                              : s.netPoints < 0
-                              ? "text-lose"
-                              : "text-content-muted"
+                      <Fragment key={s.id}>
+                        <tr
+                          className={`border-t border-line ${
+                            h2hParticipantId === s.id ? "bg-surface-raised" : ""
                           }`}
                         >
-                          {s.netPoints > 0 ? "+" : ""}
-                          {s.netPoints}
-                        </td>
-                        <td className="py-2 pr-4">
-                          <FilterChip
-                            selected={h2hParticipantId === s.id}
-                            onClick={() => setH2h(h2hParticipantId === s.id ? null : s.id)}
-                            className="whitespace-nowrap"
+                          <td className="py-2 pr-4 font-medium text-content">{s.name}</td>
+                          <td className="py-2 pr-4 text-content-muted">{s.appearances}</td>
+                          <td className="py-2 pr-4 text-emerald-400">{s.wins}</td>
+                          <td className="py-2 pr-4 text-content-muted">
+                            {s.appearances - s.wins - s.losses}
+                          </td>
+                          <td className="py-2 pr-4 text-lose">{s.losses}</td>
+                          <td className="py-2 pr-4 text-content-muted">
+                            {(s.winRate * 100).toFixed(0)}%
+                          </td>
+                          <td className="py-2 pr-4 text-content-muted">
+                            {(s.winRateB * 100).toFixed(0)}%
+                          </td>
+                          <td
+                            className={`py-2 pr-4 font-semibold ${
+                              s.netPoints > 0
+                                ? "text-emerald-400"
+                                : s.netPoints < 0
+                                ? "text-lose"
+                                : "text-content-muted"
+                            }`}
                           >
-                            상대 전적
-                          </FilterChip>
-                        </td>
-                      </tr>
+                            {s.netPoints > 0 ? "+" : ""}
+                            {s.netPoints}
+                          </td>
+                          <td className="py-2 pr-4">
+                            <FilterChip
+                              selected={h2hParticipantId === s.id}
+                              onClick={() => setH2h(h2hParticipantId === s.id ? null : s.id)}
+                              className="whitespace-nowrap"
+                            >
+                              상대 전적
+                            </FilterChip>
+                          </td>
+                        </tr>
+                        {h2hParticipantId === s.id && (
+                          <tr className="bg-surface-raised">
+                            <td colSpan={9} className="px-4 pb-3">
+                              <HeadToHeadInline
+                                participants={participants}
+                                games={filteredGames}
+                                participantId={s.id}
+                              />
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
                     ))}
                 </tbody>
               </table>
@@ -448,14 +467,6 @@ export default function StatsClient({
           </>
         )}
       </Card>
-
-      {h2hParticipantId && (
-        <HeadToHeadPanel
-          participants={participants}
-          games={filteredGames}
-          participantId={h2hParticipantId}
-        />
-      )}
 
       <Card>
         <SectionTitle description="행 참가자가 열 참가자를 상대로 딴 순점수입니다. 아래 범례의 5단계로 표시됩니다.">
@@ -715,7 +726,8 @@ export default function StatsClient({
   );
 }
 
-function HeadToHeadPanel({
+/** Renders inline inside the participant's own row/card in 순위표 (not a separate section) — so "상대 전적" expands in place instead of jumping the user to a different card. */
+function HeadToHeadInline({
   participants,
   games,
   participantId,
@@ -728,55 +740,51 @@ function HeadToHeadPanel({
     () => computeHeadToHead(participants, games, participantId),
     [participants, games, participantId]
   );
-  const name = participants.find((p) => p.id === participantId)?.name ?? "";
+
+  if (entries.length === 0) {
+    return (
+      <div className="mt-3">
+        <EmptyState title="해당 조건에 상대 전적이 없습니다." />
+      </div>
+    );
+  }
 
   return (
-    <Card>
-      <SectionTitle description="위 순위표 섹션의 기간·종목 필터가 그대로 적용됩니다. 게임의 Win/Lose로 이동한 점수만 집계하며, 정산·기부는 포함하지 않습니다.">
-        {name}의 상대 전적
-      </SectionTitle>
-      {entries.length === 0 ? (
-        <div className="mt-4">
-          <EmptyState title="해당 조건에 상대 전적이 없습니다." />
-        </div>
-      ) : (
-        <div className="overflow-x-auto mt-4">
-          <table className="w-full text-sm tabular-nums">
-            <thead>
-              <tr className="text-left text-content-muted text-xs">
-                <th className="py-2 pr-4">상대</th>
-                <th className="py-2 pr-4">딴 점수</th>
-                <th className="py-2 pr-4">잃은 점수</th>
-                <th className="py-2 pr-4">순점수</th>
+    <div className="overflow-x-auto mt-3 border-t border-line pt-3">
+      <table className="w-full text-sm tabular-nums">
+        <thead>
+          <tr className="text-left text-content-muted text-xs">
+            <th className="py-2 pr-4">상대</th>
+            <th className="py-2 pr-4">딴 점수</th>
+            <th className="py-2 pr-4">잃은 점수</th>
+            <th className="py-2 pr-4">순점수</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((e) => {
+            const net = e.pointsWon - e.pointsLost;
+            return (
+              <tr key={e.opponentId} className="border-t border-line">
+                <td className="py-2 pr-4 font-medium text-content">{e.opponentName}</td>
+                <td className="py-2 pr-4 text-emerald-400">{e.pointsWon}</td>
+                <td className="py-2 pr-4 text-lose">{e.pointsLost}</td>
+                <td
+                  className={`py-2 pr-4 font-semibold ${
+                    net > 0
+                      ? "text-emerald-400"
+                      : net < 0
+                      ? "text-lose"
+                      : "text-content-muted"
+                  }`}
+                >
+                  {net > 0 ? "+" : ""}
+                  {net}
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {entries.map((e) => {
-                const net = e.pointsWon - e.pointsLost;
-                return (
-                  <tr key={e.opponentId} className="border-t border-line">
-                    <td className="py-2 pr-4 font-medium text-content">{e.opponentName}</td>
-                    <td className="py-2 pr-4 text-emerald-400">{e.pointsWon}</td>
-                    <td className="py-2 pr-4 text-lose">{e.pointsLost}</td>
-                    <td
-                      className={`py-2 pr-4 font-semibold ${
-                        net > 0
-                          ? "text-emerald-400"
-                          : net < 0
-                          ? "text-lose"
-                          : "text-content-muted"
-                      }`}
-                    >
-                      {net > 0 ? "+" : ""}
-                      {net}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Card>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
