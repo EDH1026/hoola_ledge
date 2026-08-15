@@ -93,13 +93,13 @@ export default function GameCalendar({
   ];
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3">
+    <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
       <div className="flex items-center justify-between mb-2">
         <button
           type="button"
           onClick={() => goToMonth(cursorYear, cursorMonth - 1)}
           aria-label="이전 달"
-          className="w-7 h-7 rounded-lg text-slate-500 hover:bg-slate-100 flex items-center justify-center"
+          className="w-7 h-7 rounded-lg text-slate-400 hover:bg-slate-700 flex items-center justify-center"
         >
           ‹
         </button>
@@ -110,7 +110,7 @@ export default function GameCalendar({
           type="button"
           onClick={() => goToMonth(cursorYear, cursorMonth + 1)}
           aria-label="다음 달"
-          className="w-7 h-7 rounded-lg text-slate-500 hover:bg-slate-100 flex items-center justify-center"
+          className="w-7 h-7 rounded-lg text-slate-400 hover:bg-slate-700 flex items-center justify-center"
         >
           ›
         </button>
@@ -118,7 +118,7 @@ export default function GameCalendar({
 
       <div className="grid grid-cols-7 gap-1 mb-1">
         {WEEKDAY_LABELS.map((w) => (
-          <span key={w} className="text-center text-[11px] text-slate-400">
+          <span key={w} className="text-center text-[11px] text-slate-500">
             {w}
           </span>
         ))}
@@ -139,11 +139,11 @@ export default function GameCalendar({
               title={hasGame ? `${date} 게임 기록 있음` : undefined}
               className={`rounded-lg py-1.5 text-xs transition ${
                 isSelected
-                  ? "bg-slate-900 text-white font-semibold"
+                  ? "bg-slate-100 text-slate-900 font-semibold"
                   : hasGame
-                  ? "bg-emerald-50 text-emerald-700 font-medium hover:bg-emerald-100"
-                  : "text-slate-300 cursor-default"
-              } ${isToday && !isSelected ? "ring-1 ring-inset ring-slate-400" : ""}`}
+                  ? "bg-emerald-500/10 text-emerald-300 font-medium hover:bg-emerald-500/20"
+                  : "text-slate-600 cursor-default"
+              } ${isToday && !isSelected ? "ring-1 ring-inset ring-slate-500" : ""}`}
             >
               {Number(date.slice(8, 10))}
             </button>
@@ -151,12 +151,12 @@ export default function GameCalendar({
         })}
       </div>
 
-      <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100">
+      <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-800">
         <button
           type="button"
           onClick={() => jumpToAdjacentGameDay("prev")}
           disabled={!hasPrevGameDay}
-          className="text-xs font-medium text-slate-600 hover:text-slate-900 disabled:text-slate-300 disabled:cursor-not-allowed"
+          className="text-xs font-medium text-slate-300 hover:text-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
         >
           ← 이전 게임일
         </button>
@@ -164,7 +164,7 @@ export default function GameCalendar({
           type="button"
           onClick={() => jumpToAdjacentGameDay("next")}
           disabled={!hasNextGameDay}
-          className="text-xs font-medium text-slate-600 hover:text-slate-900 disabled:text-slate-300 disabled:cursor-not-allowed"
+          className="text-xs font-medium text-slate-300 hover:text-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
         >
           다음 게임일 →
         </button>

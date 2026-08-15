@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  --background: #020617;
+  --foreground: #f1f5f9;
 }
 
 @theme inline {
@@ -16,4 +16,18 @@ body {
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
     Arial, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+}
+
+/* Chrome/Safari paint autofilled inputs with their own light background
+   (ignoring any bg-* class) until the field is edited — a stray light flash
+   this dark theme would otherwise show on every password/name field. The
+   absurdly long transition is the standard trick to suppress the initial
+   flash entirely rather than just recoloring it after the fact. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--foreground);
+  -webkit-box-shadow: 0 0 0px 1000px #0f172a inset;
+  box-shadow: 0 0 0px 1000px #0f172a inset;
+  transition: background-color 5000s ease-in-out 0s;
 }

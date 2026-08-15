@@ -86,7 +86,7 @@ export default function SettlementsClient({
   return (
     <div className="space-y-8">
       {justRecorded && (
-        <div className="rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm px-4 py-3 space-y-1">
+        <div className="rounded-xl bg-emerald-500/10 border border-emerald-800 text-emerald-300 text-sm px-4 py-3 space-y-1">
           <div className="flex items-center justify-between gap-3">
             <span>방금 기록됨: {justRecorded.summary}</span>
             {canUndo ? (
@@ -94,26 +94,26 @@ export default function SettlementsClient({
                 type="button"
                 onClick={handleUndo}
                 disabled={undoing}
-                className="text-emerald-700 font-semibold hover:underline disabled:opacity-50 whitespace-nowrap"
+                className="text-emerald-300 font-semibold hover:underline disabled:opacity-50 whitespace-nowrap"
               >
                 {undoing ? "취소 중..." : "취소"}
               </button>
             ) : (
-              <span className="text-emerald-600/70 text-xs whitespace-nowrap">
+              <span className="text-emerald-400/70 text-xs whitespace-nowrap">
                 취소 가능 시간이 지났습니다
               </span>
             )}
           </div>
-          {undoError && <p className="text-xs text-red-600">{undoError}</p>}
+          {undoError && <p className="text-xs text-red-400">{undoError}</p>}
         </div>
       )}
 
-      <section className="bg-white rounded-2xl border border-slate-200 p-5">
+      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
         <h2 className="font-semibold mb-4">
           정리된 채권-채무 관계 ({transactions.length}건)
         </h2>
         {transactions.length === 0 ? (
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-slate-500">
             정산할 내역이 없습니다. 모두 정산 완료 상태입니다.
           </p>
         ) : (
@@ -133,9 +133,9 @@ export default function SettlementsClient({
         )}
       </section>
 
-      <section className="bg-white rounded-2xl border border-slate-200 p-5">
+      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
         <h2 className="font-semibold mb-1">변제</h2>
-        <p className="text-xs text-slate-400 mb-4">
+        <p className="text-xs text-slate-500 mb-4">
           위 카드에 제안된 조합과 다르게 실제로 갚았을 때(예: 다른 사람이 대신
           내줬을 때) 자유롭게 기록합니다. 실제 정산과 계산 방식은 완전히
           같습니다 — 굳이 누구 대신인지를 남기지 않아도, 다음에 이 화면을
@@ -144,9 +144,9 @@ export default function SettlementsClient({
         <RepaymentForm participants={participants} onRecorded={handleRecorded} />
       </section>
 
-      <section className="bg-white rounded-2xl border border-slate-200 p-5">
+      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
         <h2 className="font-semibold mb-1">기부 기록</h2>
-        <p className="text-xs text-slate-400 mb-4">
+        <p className="text-xs text-slate-500 mb-4">
           계산된 채권-채무 관계와 무관하게, 누구든 원하는 상대에게 원하는
           금액을 자유롭게 기부로 기록할 수 있습니다. 기부하는 사람의 잔액은
           그만큼 줄고, 받는 사람의 잔액은 그만큼 늡니다.
@@ -159,7 +159,7 @@ export default function SettlementsClient({
 
 function WarningBanner({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 font-medium">
+    <div className="rounded-lg bg-red-500/10 border border-red-800 text-red-300 text-xs px-3 py-2 font-medium">
       ⚠ {children}
     </div>
   );
@@ -227,14 +227,14 @@ function TransactionCard({
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+    <div className="rounded-xl border border-slate-800 bg-slate-800 p-4 space-y-3">
       <div className="flex items-center justify-center gap-2 text-sm">
         <span className="font-semibold text-red-500 truncate">{fromName}</span>
-        <span className="text-slate-400" aria-hidden>
+        <span className="text-slate-500" aria-hidden>
           →
         </span>
-        <span className="font-semibold text-emerald-600 truncate">{toName}</span>
-        <span className="ml-auto rounded-full bg-slate-900 text-white text-xs font-semibold px-2.5 py-1 whitespace-nowrap">
+        <span className="font-semibold text-emerald-400 truncate">{toName}</span>
+        <span className="ml-auto rounded-full bg-slate-100 text-slate-900 text-xs font-semibold px-2.5 py-1 whitespace-nowrap">
           {fullAmount}점
         </span>
       </div>
@@ -250,24 +250,24 @@ function TransactionCard({
               value={amountText}
               onChange={(e) => setAmountText(e.target.value)}
               placeholder="금액"
-              className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-sm bg-white"
+              className="w-20 rounded-lg border border-slate-700 px-2 py-1 text-sm bg-slate-900"
             />
             <button
               type="button"
               onClick={() => setAmountText(String(fullAmount))}
-              className="rounded-lg border border-slate-300 bg-white text-xs font-medium px-2.5 py-1.5 hover:bg-slate-100 transition whitespace-nowrap"
+              className="rounded-lg border border-slate-700 bg-slate-900 text-xs font-medium px-2.5 py-1.5 hover:bg-slate-700 transition whitespace-nowrap"
             >
               전액 ({fullAmount}점)
             </button>
             <button
               type="button"
               onClick={goToConfirm}
-              className="rounded-lg bg-slate-900 text-white text-xs font-medium px-3 py-1.5 hover:bg-slate-800 transition whitespace-nowrap ml-auto"
+              className="rounded-lg bg-slate-100 text-slate-900 text-xs font-medium px-3 py-1.5 hover:bg-slate-300 transition whitespace-nowrap ml-auto"
             >
               다음
             </button>
           </div>
-          {error && <p className="text-xs text-red-600">{error}</p>}
+          {error && <p className="text-xs text-red-400">{error}</p>}
         </div>
       ) : (
         <div className="space-y-2">
@@ -285,13 +285,13 @@ function TransactionCard({
               한 번 더 확인해 주세요.
             </WarningBanner>
           )}
-          {error && <p className="text-xs text-red-600">{error}</p>}
+          {error && <p className="text-xs text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button
               type="button"
               onClick={handleConfirm}
               disabled={isSaving}
-              className="rounded-lg bg-slate-900 text-white text-xs font-medium px-3 py-1.5 hover:bg-slate-800 transition disabled:opacity-50"
+              className="rounded-lg bg-slate-100 text-slate-900 text-xs font-medium px-3 py-1.5 hover:bg-slate-300 transition disabled:opacity-50"
             >
               {isSaving ? "기록 중..." : "확인 및 기록"}
             </button>
@@ -299,7 +299,7 @@ function TransactionCard({
               type="button"
               onClick={() => setStep("idle")}
               disabled={isSaving}
-              className="rounded-lg bg-white border border-slate-300 text-slate-600 text-xs font-medium px-3 py-1.5 hover:bg-slate-100 transition"
+              className="rounded-lg bg-slate-900 border border-slate-700 text-slate-300 text-xs font-medium px-3 py-1.5 hover:bg-slate-700 transition"
             >
               취소
             </button>
@@ -381,7 +381,7 @@ function DonationForm({
             주세요.
           </WarningBanner>
         )}
-        {error && <p className="text-xs text-red-600">{error}</p>}
+        {error && <p className="text-xs text-red-400">{error}</p>}
         <div className="flex gap-2">
           <button
             type="button"
@@ -395,7 +395,7 @@ function DonationForm({
             type="button"
             onClick={() => setStep("idle")}
             disabled={isSaving}
-            className="rounded-lg bg-white border border-slate-300 text-slate-600 text-sm font-medium px-4 py-2 hover:bg-slate-100 transition"
+            className="rounded-lg bg-slate-900 border border-slate-700 text-slate-300 text-sm font-medium px-4 py-2 hover:bg-slate-700 transition"
           >
             취소
           </button>
@@ -408,11 +408,11 @@ function DonationForm({
     <div className="space-y-2">
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <label className="block text-xs text-slate-500 mb-1">주는 사람</label>
+          <label className="block text-xs text-slate-400 mb-1">주는 사람</label>
           <select
             value={fromId}
             onChange={(e) => setFromId(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-w-[120px]"
+            className="bg-slate-900 rounded-lg border border-slate-700 px-3 py-1.5 text-sm min-w-[120px]"
           >
             {participants.map((p) => (
               <option key={p.id} value={p.id}>
@@ -422,11 +422,11 @@ function DonationForm({
           </select>
         </div>
         <div>
-          <label className="block text-xs text-slate-500 mb-1">받는 사람</label>
+          <label className="block text-xs text-slate-400 mb-1">받는 사람</label>
           <select
             value={toId}
             onChange={(e) => setToId(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-w-[120px]"
+            className="bg-slate-900 rounded-lg border border-slate-700 px-3 py-1.5 text-sm min-w-[120px]"
           >
             {participants.map((p) => (
               <option key={p.id} value={p.id}>
@@ -436,7 +436,7 @@ function DonationForm({
           </select>
         </div>
         <div>
-          <label className="block text-xs text-slate-500 mb-1">금액</label>
+          <label className="block text-xs text-slate-400 mb-1">금액</label>
           <input
             type="number"
             min={1}
@@ -444,17 +444,17 @@ function DonationForm({
             value={amountText}
             onChange={(e) => setAmountText(e.target.value)}
             placeholder="금액"
-            className="w-20 rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+            className="bg-slate-900 w-20 rounded-lg border border-slate-700 px-3 py-1.5 text-sm"
           />
         </div>
         <div className="flex-1 min-w-[160px]">
-          <label className="block text-xs text-slate-500 mb-1">메모 (선택)</label>
+          <label className="block text-xs text-slate-400 mb-1">메모 (선택)</label>
           <input
             type="text"
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="예: 그냥 기분이라서"
-            className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+            className="bg-slate-900 w-full rounded-lg border border-slate-700 px-3 py-1.5 text-sm"
           />
         </div>
         <button
@@ -465,7 +465,7 @@ function DonationForm({
           다음
         </button>
       </div>
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {error && <p className="text-xs text-red-400">{error}</p>}
     </div>
   );
 }
@@ -552,13 +552,13 @@ function RepaymentForm({
             주세요.
           </WarningBanner>
         )}
-        {error && <p className="text-xs text-red-600">{error}</p>}
+        {error && <p className="text-xs text-red-400">{error}</p>}
         <div className="flex gap-2">
           <button
             type="button"
             onClick={handleConfirm}
             disabled={isSaving}
-            className="rounded-lg bg-slate-900 text-white text-sm font-medium px-4 py-2 hover:bg-slate-800 transition disabled:opacity-50"
+            className="rounded-lg bg-slate-100 text-slate-900 text-sm font-medium px-4 py-2 hover:bg-slate-300 transition disabled:opacity-50"
           >
             {isSaving ? "기록 중..." : "확인 및 변제 기록"}
           </button>
@@ -566,7 +566,7 @@ function RepaymentForm({
             type="button"
             onClick={() => setStep("idle")}
             disabled={isSaving}
-            className="rounded-lg bg-white border border-slate-300 text-slate-600 text-sm font-medium px-4 py-2 hover:bg-slate-100 transition"
+            className="rounded-lg bg-slate-900 border border-slate-700 text-slate-300 text-sm font-medium px-4 py-2 hover:bg-slate-700 transition"
           >
             취소
           </button>
@@ -579,11 +579,11 @@ function RepaymentForm({
     <div className="space-y-2">
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <label className="block text-xs text-slate-500 mb-1">갚은 사람</label>
+          <label className="block text-xs text-slate-400 mb-1">갚은 사람</label>
           <select
             value={fromId}
             onChange={(e) => setFromId(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-w-[120px]"
+            className="bg-slate-900 rounded-lg border border-slate-700 px-3 py-1.5 text-sm min-w-[120px]"
           >
             {participants.map((p) => (
               <option key={p.id} value={p.id}>
@@ -593,11 +593,11 @@ function RepaymentForm({
           </select>
         </div>
         <div>
-          <label className="block text-xs text-slate-500 mb-1">받은 사람</label>
+          <label className="block text-xs text-slate-400 mb-1">받은 사람</label>
           <select
             value={toId}
             onChange={(e) => setToId(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm min-w-[120px]"
+            className="bg-slate-900 rounded-lg border border-slate-700 px-3 py-1.5 text-sm min-w-[120px]"
           >
             {participants.map((p) => (
               <option key={p.id} value={p.id}>
@@ -607,7 +607,7 @@ function RepaymentForm({
           </select>
         </div>
         <div>
-          <label className="block text-xs text-slate-500 mb-1">금액</label>
+          <label className="block text-xs text-slate-400 mb-1">금액</label>
           <input
             type="number"
             min={1}
@@ -615,28 +615,28 @@ function RepaymentForm({
             value={amountText}
             onChange={(e) => setAmountText(e.target.value)}
             placeholder="금액"
-            className="w-20 rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+            className="bg-slate-900 w-20 rounded-lg border border-slate-700 px-3 py-1.5 text-sm"
           />
         </div>
         <div className="flex-1 min-w-[160px]">
-          <label className="block text-xs text-slate-500 mb-1">메모 (선택)</label>
+          <label className="block text-xs text-slate-400 mb-1">메모 (선택)</label>
           <input
             type="text"
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="예: 창민이 대신 현금으로 지불"
-            className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+            className="bg-slate-900 w-full rounded-lg border border-slate-700 px-3 py-1.5 text-sm"
           />
         </div>
         <button
           type="button"
           onClick={goToConfirm}
-          className="rounded-lg bg-slate-900 text-white text-sm font-medium px-4 py-2 hover:bg-slate-800 transition"
+          className="rounded-lg bg-slate-100 text-slate-900 text-sm font-medium px-4 py-2 hover:bg-slate-300 transition"
         >
           다음
         </button>
       </div>
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {error && <p className="text-xs text-red-400">{error}</p>}
     </div>
   );
 }

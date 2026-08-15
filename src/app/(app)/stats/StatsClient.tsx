@@ -71,7 +71,7 @@ function heatmapStyle(net: number, maxAbs: number): CSSProperties {
 }
 
 const PALETTE = [
-  "#0f172a",
+  "#e2e8f0",
   "#059669",
   "#d97706",
   "#dc2626",
@@ -82,6 +82,23 @@ const PALETTE = [
   "#65a30d",
   "#ea580c",
 ];
+
+// Dark-theme chart chrome — recharts' own defaults (light grid lines, a
+// near-black tick fill, a white Tooltip content box) assume a white page and
+// would otherwise render as stray light artifacts against this app's dark
+// theme.
+const CHART_GRID_STROKE = "#1e293b"; // slate-800
+const CHART_TICK_FILL = "#94a3b8"; // slate-400
+const CHART_TOOLTIP_PROPS = {
+  contentStyle: {
+    backgroundColor: "#0f172a",
+    border: "1px solid #1e293b",
+    borderRadius: 8,
+  },
+  labelStyle: { color: "#f1f5f9" },
+  itemStyle: { color: "#f1f5f9" },
+};
+const CHART_LEGEND_PROPS = { wrapperStyle: { color: "#cbd5e1" } };
 
 /** Small per-section 종목 filter — v2.16: each stats section gets its own, independent of the others, rather than one filter driving the whole page. */
 function GameTypeFilterButtons({
@@ -100,8 +117,8 @@ function GameTypeFilterButtons({
           onClick={() => onChange(opt.value)}
           className={`text-xs px-2.5 py-1 rounded-lg font-medium transition ${
             value === opt.value
-              ? "bg-slate-900 text-white"
-              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              ? "bg-slate-100 text-slate-900"
+              : "bg-slate-800 text-slate-300 hover:bg-slate-600"
           }`}
         >
           {opt.label}
@@ -128,8 +145,8 @@ function GroupingFilterButtons({
           onClick={() => onChange(opt.value)}
           className={`text-xs px-2.5 py-1 rounded-lg font-medium transition ${
             value === opt.value
-              ? "bg-slate-900 text-white"
-              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              ? "bg-slate-100 text-slate-900"
+              : "bg-slate-800 text-slate-300 hover:bg-slate-600"
           }`}
         >
           {opt.label}
@@ -279,9 +296,9 @@ export default function StatsClient({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap gap-4 bg-white rounded-2xl border border-slate-200 p-4">
+      <div className="flex flex-wrap gap-4 bg-slate-900 rounded-2xl border border-slate-800 p-4">
         <div>
-          <span className="text-xs text-slate-400 block mb-1">기간</span>
+          <span className="text-xs text-slate-500 block mb-1">기간</span>
           <div className="flex gap-1 flex-wrap">
             {RANGE_OPTIONS.map((opt) => (
               <button
@@ -289,8 +306,8 @@ export default function StatsClient({
                 onClick={() => setRange(opt.value)}
                 className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
                   range === opt.value
-                    ? "bg-slate-900 text-white"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    ? "bg-slate-100 text-slate-900"
+                    : "bg-slate-800 text-slate-300 hover:bg-slate-600"
                 }`}
               >
                 {opt.label}
@@ -303,33 +320,33 @@ export default function StatsClient({
                 type="date"
                 value={customStart}
                 onChange={(e) => setCustomStart(e.target.value)}
-                className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
+                className="bg-slate-900 rounded-lg border border-slate-700 px-2 py-1 text-xs"
               />
-              <span className="text-xs text-slate-400">~</span>
+              <span className="text-xs text-slate-500">~</span>
               <input
                 type="date"
                 value={customEnd}
                 onChange={(e) => setCustomEnd(e.target.value)}
-                className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
+                className="bg-slate-900 rounded-lg border border-slate-700 px-2 py-1 text-xs"
               />
             </div>
           )}
         </div>
       </div>
 
-      <section className="bg-white rounded-2xl border border-slate-200 p-5">
+      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
           <h2 className="font-semibold">순위표 ({leaderboardGames.length}게임 기준)</h2>
           <GameTypeFilterButtons value={leaderboardGameType} onChange={setLeaderboardGameType} />
         </div>
         <div className="h-3" />
         {activeStats.length === 0 ? (
-          <p className="text-sm text-slate-400">해당 조건에 게임 기록이 없습니다.</p>
+          <p className="text-sm text-slate-500">해당 조건에 게임 기록이 없습니다.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-slate-400 text-xs">
+                <tr className="text-left text-slate-500 text-xs">
                   <th className="py-2 pr-4">이름</th>
                   <th className="py-2 pr-4">참여</th>
                   <th className="py-2 pr-4">승</th>
@@ -348,30 +365,30 @@ export default function StatsClient({
                   .map((s) => (
                     <tr
                       key={s.id}
-                      className={`border-t border-slate-100 ${
-                        h2hParticipantId === s.id ? "bg-slate-50" : ""
+                      className={`border-t border-slate-800 ${
+                        h2hParticipantId === s.id ? "bg-slate-800" : ""
                       }`}
                     >
                       <td className="py-2 pr-4 font-medium">{s.name}</td>
-                      <td className="py-2 pr-4 text-slate-500">{s.appearances}</td>
-                      <td className="py-2 pr-4 text-emerald-600">{s.wins}</td>
-                      <td className="py-2 pr-4 text-slate-400">
+                      <td className="py-2 pr-4 text-slate-400">{s.appearances}</td>
+                      <td className="py-2 pr-4 text-emerald-400">{s.wins}</td>
+                      <td className="py-2 pr-4 text-slate-500">
                         {s.appearances - s.wins - s.losses}
                       </td>
                       <td className="py-2 pr-4 text-red-500">{s.losses}</td>
-                      <td className="py-2 pr-4 text-slate-500">
+                      <td className="py-2 pr-4 text-slate-400">
                         {(s.winRate * 100).toFixed(0)}%
                       </td>
-                      <td className="py-2 pr-4 text-slate-500">
+                      <td className="py-2 pr-4 text-slate-400">
                         {(s.winRateB * 100).toFixed(0)}%
                       </td>
                       <td
                         className={`py-2 pr-4 font-semibold ${
                           s.netPoints > 0
-                            ? "text-emerald-600"
+                            ? "text-emerald-400"
                             : s.netPoints < 0
                             ? "text-red-500"
-                            : "text-slate-400"
+                            : "text-slate-500"
                         }`}
                       >
                         {s.netPoints > 0 ? "+" : ""}
@@ -385,8 +402,8 @@ export default function StatsClient({
                           }
                           className={`text-xs px-2 py-1 rounded-lg font-medium transition whitespace-nowrap ${
                             h2hParticipantId === s.id
-                              ? "bg-slate-900 text-white"
-                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                              ? "bg-slate-100 text-slate-900"
+                              : "bg-slate-800 text-slate-300 hover:bg-slate-600"
                           }`}
                         >
                           상대 전적
@@ -408,17 +425,17 @@ export default function StatsClient({
         />
       )}
 
-      <section className="bg-white rounded-2xl border border-slate-200 p-5">
+      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
           <h2 className="font-semibold">상대 전적 매트릭스</h2>
           <GameTypeFilterButtons value={matrixGameType} onChange={setMatrixGameType} />
         </div>
-        <p className="text-xs text-slate-400 mb-4">
+        <p className="text-xs text-slate-500 mb-4">
           행 참가자가 열 참가자를 상대로 딴 순점수입니다. 초록은 우세, 빨강은
           열세이며 색이 진할수록 격차가 큽니다.
         </p>
         {matrixParticipants.length < 2 ? (
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-slate-500">
             비교할 참가자가 2명 이상일 때 표시됩니다.
           </p>
         ) : (
@@ -430,7 +447,7 @@ export default function StatsClient({
                   {matrixParticipants.map((p) => (
                     <th
                       key={p.id}
-                      className="p-2 text-xs font-medium text-slate-500 whitespace-nowrap"
+                      className="p-2 text-xs font-medium text-slate-400 whitespace-nowrap"
                     >
                       {p.name}
                     </th>
@@ -440,7 +457,7 @@ export default function StatsClient({
               <tbody>
                 {matrixParticipants.map((row) => (
                   <tr key={row.id}>
-                    <th className="p-2 text-xs font-medium text-slate-500 text-right whitespace-nowrap">
+                    <th className="p-2 text-xs font-medium text-slate-400 text-right whitespace-nowrap">
                       {row.name}
                     </th>
                     {matrixParticipants.map((col) => {
@@ -448,7 +465,7 @@ export default function StatsClient({
                         return (
                           <td
                             key={col.id}
-                            className="p-2 text-center text-slate-300 bg-slate-50"
+                            className="p-2 text-center text-slate-600 bg-slate-800"
                           >
                             -
                           </td>
@@ -476,20 +493,20 @@ export default function StatsClient({
         )}
       </section>
 
-      <section className="bg-white rounded-2xl border border-slate-200 p-5">
+      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <h2 className="font-semibold">천적 / 밥</h2>
           <GameTypeFilterButtons value={nemesisGameType} onChange={setNemesisGameType} />
         </div>
         {nemesisVictim.filter((nv) => nv.nemesis || nv.victim).length === 0 ? (
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-slate-500">
             아직 상대 전적을 계산할 만한 데이터가 없습니다.
           </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-slate-400 text-xs">
+                <tr className="text-left text-slate-500 text-xs">
                   <th className="py-2 pr-4">이름</th>
                   <th className="py-2 pr-4">천적 (가장 많이 짐)</th>
                   <th className="py-2 pr-4">밥 (가장 많이 이김)</th>
@@ -499,14 +516,14 @@ export default function StatsClient({
                 {nemesisVictim
                   .filter((nv) => nv.nemesis || nv.victim)
                   .map((nv) => (
-                    <tr key={nv.id} className="border-t border-slate-100">
+                    <tr key={nv.id} className="border-t border-slate-800">
                       <td className="py-2 pr-4 font-medium">{nv.name}</td>
                       <td className="py-2 pr-4 text-red-500">
                         {nv.nemesis
                           ? `${nv.nemesis.opponentName} (-${nv.nemesis.pointsLost})`
                           : "-"}
                       </td>
-                      <td className="py-2 pr-4 text-emerald-600">
+                      <td className="py-2 pr-4 text-emerald-400">
                         {nv.victim
                           ? `${nv.victim.opponentName} (+${nv.victim.pointsWon})`
                           : "-"}
@@ -519,22 +536,22 @@ export default function StatsClient({
         )}
       </section>
 
-      <section className="bg-white rounded-2xl border border-slate-200 p-5">
+      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <h2 className="font-semibold">참가자별 승 / 패</h2>
           <GameTypeFilterButtons value={winLossGameType} onChange={setWinLossGameType} />
         </div>
         {winLossData.length === 0 ? (
-          <p className="text-sm text-slate-400">데이터가 없습니다.</p>
+          <p className="text-sm text-slate-500">데이터가 없습니다.</p>
         ) : (
           <div style={{ width: "100%", height: 280 }}>
             <ResponsiveContainer>
               <BarChart data={winLossData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-                <Tooltip />
-                <Legend />
+                <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_STROKE} />
+                <XAxis dataKey="name" tick={{ fontSize: 12, fill: CHART_TICK_FILL }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: CHART_TICK_FILL }} />
+                <Tooltip {...CHART_TOOLTIP_PROPS} />
+                <Legend {...CHART_LEGEND_PROPS} />
                 <Bar dataKey="승" fill="#059669" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="패" fill="#dc2626" radius={[4, 4, 0, 0]} />
               </BarChart>
@@ -543,7 +560,7 @@ export default function StatsClient({
         )}
       </section>
 
-      <section className="bg-white rounded-2xl border border-slate-200 p-5">
+      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <h2 className="font-semibold">참가자별 누적 순점수 추이</h2>
           <div className="flex flex-wrap gap-3">
@@ -552,16 +569,20 @@ export default function StatsClient({
           </div>
         </div>
         {cumulativeData.length === 0 ? (
-          <p className="text-sm text-slate-400">데이터가 없습니다.</p>
+          <p className="text-sm text-slate-500">데이터가 없습니다.</p>
         ) : (
           <div style={{ width: "100%", height: 320 }}>
             <ResponsiveContainer>
               <LineChart data={cumulativeData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="label" tick={{ fontSize: 10 }} hide={cumulativeData.length > 20} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-                <Tooltip />
-                <Legend />
+                <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_STROKE} />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 10, fill: CHART_TICK_FILL }}
+                  hide={cumulativeData.length > 20}
+                />
+                <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: CHART_TICK_FILL }} />
+                <Tooltip {...CHART_TOOLTIP_PROPS} />
+                <Legend {...CHART_LEGEND_PROPS} />
                 {trackedNames.map((name, i) => (
                   <Line
                     key={name}
@@ -578,7 +599,7 @@ export default function StatsClient({
         )}
       </section>
 
-      <section className="bg-white rounded-2xl border border-slate-200 p-5">
+      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <h2 className="font-semibold">기간별 게임 수 추이</h2>
           <div className="flex flex-wrap gap-3">
@@ -587,16 +608,16 @@ export default function StatsClient({
           </div>
         </div>
         {trendData.length === 0 ? (
-          <p className="text-sm text-slate-400">데이터가 없습니다.</p>
+          <p className="text-sm text-slate-500">데이터가 없습니다.</p>
         ) : (
           <div style={{ width: "100%", height: 240 }}>
             <ResponsiveContainer>
               <BarChart data={trendData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-                <Tooltip />
-                <Bar dataKey="게임수" fill="#0f172a" radius={[4, 4, 0, 0]} />
+                <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_STROKE} />
+                <XAxis dataKey="label" tick={{ fontSize: 12, fill: CHART_TICK_FILL }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: CHART_TICK_FILL }} />
+                <Tooltip {...CHART_TOOLTIP_PROPS} />
+                <Bar dataKey="게임수" fill="#e2e8f0" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -622,19 +643,19 @@ function HeadToHeadPanel({
   const name = participants.find((p) => p.id === participantId)?.name ?? "";
 
   return (
-    <section className="bg-white rounded-2xl border border-slate-200 p-5">
+    <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
       <h2 className="font-semibold mb-1">{name}의 상대 전적</h2>
-      <p className="text-xs text-slate-400 mb-4">
+      <p className="text-xs text-slate-500 mb-4">
         위 순위표 섹션의 기간·종목 필터가 그대로 적용됩니다. 게임의 Win/Lose로
         이동한 점수만 집계하며, 정산·기부는 포함하지 않습니다.
       </p>
       {entries.length === 0 ? (
-        <p className="text-sm text-slate-400">해당 조건에 상대 전적이 없습니다.</p>
+        <p className="text-sm text-slate-500">해당 조건에 상대 전적이 없습니다.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-slate-400 text-xs">
+              <tr className="text-left text-slate-500 text-xs">
                 <th className="py-2 pr-4">상대</th>
                 <th className="py-2 pr-4">딴 점수</th>
                 <th className="py-2 pr-4">잃은 점수</th>
@@ -645,17 +666,17 @@ function HeadToHeadPanel({
               {entries.map((e) => {
                 const net = e.pointsWon - e.pointsLost;
                 return (
-                  <tr key={e.opponentId} className="border-t border-slate-100">
+                  <tr key={e.opponentId} className="border-t border-slate-800">
                     <td className="py-2 pr-4 font-medium">{e.opponentName}</td>
-                    <td className="py-2 pr-4 text-emerald-600">{e.pointsWon}</td>
+                    <td className="py-2 pr-4 text-emerald-400">{e.pointsWon}</td>
                     <td className="py-2 pr-4 text-red-500">{e.pointsLost}</td>
                     <td
                       className={`py-2 pr-4 font-semibold ${
                         net > 0
-                          ? "text-emerald-600"
+                          ? "text-emerald-400"
                           : net < 0
                           ? "text-red-500"
-                          : "text-slate-400"
+                          : "text-slate-500"
                       }`}
                     >
                       {net > 0 ? "+" : ""}

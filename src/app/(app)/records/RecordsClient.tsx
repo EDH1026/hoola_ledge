@@ -152,14 +152,14 @@ export default function RecordsClient({
 
   return (
     <div className="space-y-6">
-      <section className="bg-white rounded-2xl border border-slate-200 p-5">
+      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
           <h2 className="font-semibold">분기 티어</h2>
           {availableTierQuarters.length > 0 && (
             <select
               value={effectiveTierQuarter ?? ""}
               onChange={(e) => setTierQuarter(e.target.value)}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+              className="bg-slate-900 rounded-lg border border-slate-700 px-3 py-1.5 text-sm"
             >
               {availableTierQuarters.map((q) => (
                 <option key={q} value={q}>
@@ -169,7 +169,7 @@ export default function RecordsClient({
             </select>
           )}
         </div>
-        <p className="text-xs text-slate-400 mb-4">
+        <p className="text-xs text-slate-500 mb-4">
           이번 분기 기준 — 승 지수·패 지수는 1.00이 기대치입니다.
         </p>
 
@@ -181,8 +181,8 @@ export default function RecordsClient({
               onClick={() => setTierGameType(tab.value)}
               className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
                 tierGameType === tab.value
-                  ? "bg-slate-900 text-white"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  ? "bg-slate-100 text-slate-900"
+                  : "bg-slate-800 text-slate-300 hover:bg-slate-600"
               }`}
             >
               {tab.label}
@@ -191,7 +191,7 @@ export default function RecordsClient({
         </div>
 
         {!effectiveTierQuarter || visibleTierRows.length === 0 ? (
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-slate-500">
             이 종목으로는 아직 분기 티어를 계산할 만한 기록이 없습니다.
           </p>
         ) : (
@@ -202,16 +202,16 @@ export default function RecordsClient({
           </div>
         )}
 
-        <p className="text-xs text-slate-400 mt-4">
+        <p className="text-xs text-slate-500 mt-4">
           참석 인원수로 계산한 기대 승·패 대비 성과로 매깁니다 — 4인전 기대
           승률 25%, 5인전 20%. 판돈(점수)과 표본 크기도 반영되며, 분기마다
           리셋되되 직전 분기 성적이 35% 이어집니다.
         </p>
       </section>
 
-      <section className="bg-white rounded-2xl border border-slate-200 p-5">
+      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
         <h2 className="font-semibold mb-1">성향 맵</h2>
-        <p className="text-xs text-slate-400 mb-4">
+        <p className="text-xs text-slate-500 mb-4">
           항상 최근 3개월(90일 롤링) 기준입니다. 등급이나 뱃지가 아니라 좌표
           위 위치로만 성향을 보여줍니다.
         </p>
@@ -224,8 +224,8 @@ export default function RecordsClient({
               onClick={() => setStyleMapGameType(tab.value)}
               className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
                 styleMapGameType === tab.value
-                  ? "bg-slate-900 text-white"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  ? "bg-slate-100 text-slate-900"
+                  : "bg-slate-800 text-slate-300 hover:bg-slate-600"
               }`}
             >
               {tab.label}
@@ -234,23 +234,23 @@ export default function RecordsClient({
         </div>
 
         {styleMapPoints.length === 0 ? (
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-slate-500">
             이 종목으로는 최근 90일 내 기록이 없습니다.
           </p>
         ) : (
           <StyleMapChart points={styleMapPoints} />
         )}
 
-        <p className="text-xs text-slate-400 mt-4">
+        <p className="text-xs text-slate-500 mt-4">
           가로 = 적극성(1.00 = 기대치. 오른쪽일수록 Win 아니면 Lose로 끝나는
           판이 많고, 왼쪽일수록 무로 지나가는 판이 많습니다) / 세로 = 손익(0 =
           본전). 판수가 적을수록 점이 크게 튈 수 있어 작고 흐리게 표시됩니다.
         </p>
       </section>
 
-      <section className="bg-white rounded-2xl border border-slate-200 p-5">
+      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
         <h2 className="font-semibold mb-1">명예의 전당</h2>
-        <p className="text-xs text-slate-400 mb-4">
+        <p className="text-xs text-slate-500 mb-4">
           항상 통산(전체 기간·전체 종목) 기준입니다.
         </p>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -300,7 +300,7 @@ function TierCard({ row }: { row: TierRow }) {
   const placementProgress = Math.min(1, row.weight / TIER_MIN_WEIGHT);
 
   return (
-    <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 space-y-2">
+    <div className="rounded-xl bg-slate-800 border border-slate-800 p-3 space-y-2">
       <div className="flex items-center justify-between gap-2">
         <span className="font-medium text-sm truncate">{row.name}</span>
         <DeltaArrow delta={delta} />
@@ -308,10 +308,10 @@ function TierCard({ row }: { row: TierRow }) {
 
       {row.tier === "unranked" ? (
         <div>
-          <p className="text-xs text-slate-500 mb-1">배치 중 ({row.games}판)</p>
-          <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
+          <p className="text-xs text-slate-400 mb-1">배치 중 ({row.games}판)</p>
+          <div className="h-1.5 rounded-full bg-slate-700 overflow-hidden">
             <div
-              className="h-full bg-slate-400"
+              className="h-full bg-slate-600"
               style={{ width: `${placementProgress * 100}%` }}
             />
           </div>
@@ -319,13 +319,13 @@ function TierCard({ row }: { row: TierRow }) {
       ) : (
         <div className="flex items-center gap-2 flex-wrap">
           <TierBadge tier={row.tier} />
-          <span className="text-sm font-semibold text-slate-900">
+          <span className="text-sm font-semibold text-slate-100">
             {Math.round(row.tr)} TR
           </span>
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-slate-500">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-slate-400">
         <span>승 지수 {row.winIndex.toFixed(2)}</span>
         <span>패 지수 {row.lossIndex.toFixed(2)}</span>
         <span>{row.games}판 참여</span>
@@ -371,7 +371,7 @@ function StyleMapDot(props: {
       r={r}
       fill={fill}
       fillOpacity={opacity}
-      stroke={payload.clamped ? "#0f172a" : "none"}
+      stroke={payload.clamped ? "#f8fafc" : "none"}
       strokeWidth={payload.clamped ? 1.5 : 0}
       strokeDasharray={payload.clamped ? "3 2" : undefined}
     />
@@ -388,13 +388,13 @@ function StyleMapTooltip({
   if (!active || !payload?.length) return null;
   const p = payload[0].payload;
   return (
-    <div className="bg-white border border-slate-200 rounded-lg shadow-sm px-3 py-2 text-xs space-y-0.5">
-      <p className="font-semibold text-slate-900">{p.name}</p>
-      <p className="text-slate-500">적극성 {p.engagement.toFixed(2)}</p>
-      <p className="text-slate-500">손익 {p.performance >= 0 ? "+" : ""}{p.performance.toFixed(2)}</p>
-      <p className="text-slate-500">승 지수 {p.winIndex.toFixed(2)} · 패 지수 {p.lossIndex.toFixed(2)}</p>
-      <p className="text-slate-500">최근 90일 {p.games}판</p>
-      {p.clamped && <p className="text-amber-600">* 실제 값은 표시 범위를 벗어남</p>}
+    <div className="bg-slate-900 border border-slate-800 rounded-lg shadow-sm px-3 py-2 text-xs space-y-0.5">
+      <p className="font-semibold text-slate-100">{p.name}</p>
+      <p className="text-slate-400">적극성 {p.engagement.toFixed(2)}</p>
+      <p className="text-slate-400">손익 {p.performance >= 0 ? "+" : ""}{p.performance.toFixed(2)}</p>
+      <p className="text-slate-400">승 지수 {p.winIndex.toFixed(2)} · 패 지수 {p.lossIndex.toFixed(2)}</p>
+      <p className="text-slate-400">최근 90일 {p.games}판</p>
+      {p.clamped && <p className="text-amber-400">* 실제 값은 표시 범위를 벗어남</p>}
     </div>
   );
 }
@@ -407,15 +407,15 @@ function StyleMapChart({ points }: { points: StyleMapPlotPoint[] }) {
     <div style={{ width: "100%", height: 420 }}>
       <ResponsiveContainer>
         <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 10 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+          <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
           <XAxis
             type="number"
             dataKey="x"
             domain={STYLE_MAP_X_DOMAIN}
             ticks={STYLE_MAP_X_TICKS}
             allowDataOverflow
-            tick={{ fontSize: 12 }}
-            label={{ value: "적극성 (ENG)", position: "insideBottom", offset: -10, fontSize: 12 }}
+            tick={{ fontSize: 12, fill: "#94a3b8" }}
+            label={{ value: "적극성 (ENG)", position: "insideBottom", offset: -10, fontSize: 12, fill: "#94a3b8" }}
           />
           <YAxis
             type="number"
@@ -423,8 +423,8 @@ function StyleMapChart({ points }: { points: StyleMapPlotPoint[] }) {
             domain={STYLE_MAP_Y_DOMAIN}
             ticks={STYLE_MAP_Y_TICKS}
             allowDataOverflow
-            tick={{ fontSize: 12 }}
-            label={{ value: "손익 (PERF)", angle: -90, position: "insideLeft", fontSize: 12 }}
+            tick={{ fontSize: 12, fill: "#94a3b8" }}
+            label={{ value: "손익 (PERF)", angle: -90, position: "insideLeft", fontSize: 12, fill: "#94a3b8" }}
           />
           <ReferenceArea x1={1.0} x2={STYLE_MAP_X_DOMAIN[1]} y1={0} y2={STYLE_MAP_Y_DOMAIN[1]} fill="#059669" fillOpacity={0.06} label={{ value: "승부사", position: "insideTopRight", fontSize: 11, fill: "#059669" }} />
           <ReferenceArea x1={1.0} x2={STYLE_MAP_X_DOMAIN[1]} y1={STYLE_MAP_Y_DOMAIN[0]} y2={0} fill="#dc2626" fillOpacity={0.06} label={{ value: "불나방", position: "insideBottomRight", fontSize: 11, fill: "#dc2626" }} />
@@ -439,7 +439,7 @@ function StyleMapChart({ points }: { points: StyleMapPlotPoint[] }) {
               <StyleMapDot {...(props as { cx?: number; cy?: number; payload?: StyleMapPlotPoint })} maxGames={maxGames} />
             )}
           >
-            <LabelList dataKey="name" position="top" style={{ fontSize: 10, fill: "#475569" }} />
+            <LabelList dataKey="name" position="top" style={{ fontSize: 10, fill: "#cbd5e1" }} />
           </Scatter>
         </ScatterChart>
       </ResponsiveContainer>
@@ -457,7 +457,7 @@ function DeltaArrow({ delta }: { delta: TierDelta }) {
   }
   if (delta === "up") {
     return (
-      <span className="text-xs font-semibold text-emerald-600 whitespace-nowrap">
+      <span className="text-xs font-semibold text-emerald-400 whitespace-nowrap">
         ▲ 상승
       </span>
     );
@@ -470,7 +470,7 @@ function DeltaArrow({ delta }: { delta: TierDelta }) {
     );
   }
   return (
-    <span className="text-xs font-medium text-slate-300 whitespace-nowrap">
+    <span className="text-xs font-medium text-slate-600 whitespace-nowrap">
       − 유지
     </span>
   );
@@ -504,18 +504,18 @@ function RecordCategory({
   signed?: boolean;
 }) {
   return (
-    <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
-      <p className="text-xs text-slate-400 mb-1.5">{label}</p>
+    <div className="rounded-xl bg-slate-800 border border-slate-800 p-3">
+      <p className="text-xs text-slate-500 mb-1.5">{label}</p>
       {tiers.length === 0 ? (
-        <p className="text-sm text-slate-400">아직 없음</p>
+        <p className="text-sm text-slate-500">아직 없음</p>
       ) : (
         <ul className="space-y-1">
           {tiers.map((tier) => (
             <li key={tier.rank} className="text-sm">
-              <span className="text-slate-400 mr-1.5 whitespace-nowrap">
+              <span className="text-slate-500 mr-1.5 whitespace-nowrap">
                 {tier.entries.length > 1 ? `공동 ${tier.rank}위` : `${tier.rank}위`}
               </span>
-              <span className="font-semibold text-slate-900">
+              <span className="font-semibold text-slate-100">
                 {tier.entries.map((e) => formatRecordEntry(e, unit, signed)).join(", ")}
               </span>
             </li>

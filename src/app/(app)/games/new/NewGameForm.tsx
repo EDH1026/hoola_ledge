@@ -35,10 +35,10 @@ function chipClassName(opts: { isOver?: boolean; isDragging?: boolean; isTapSele
     ${isDragging ? "opacity-40" : ""}
     ${
       isOver
-        ? "border-emerald-500 bg-emerald-50 scale-105"
+        ? "border-emerald-500 bg-emerald-500/10 scale-105"
         : isTapSelected
-        ? "border-red-500 bg-red-50 text-red-700"
-        : "border-slate-200 bg-slate-50 hover:bg-slate-100"
+        ? "border-red-500 bg-red-500/10 text-red-300"
+        : "border-slate-800 bg-slate-800 hover:bg-slate-700"
     }
   `;
 }
@@ -83,7 +83,7 @@ function Chip({
 
 function ChipOverlay({ name }: { name: string }) {
   return (
-    <div className="select-none rounded-xl border-2 border-slate-900 bg-white px-4 py-3 text-sm font-medium text-center shadow-lg cursor-grabbing">
+    <div className="select-none rounded-xl border-2 border-slate-100 bg-slate-900 px-4 py-3 text-sm font-medium text-center shadow-lg cursor-grabbing">
       {name}
     </div>
   );
@@ -243,7 +243,7 @@ export default function NewGameForm({
 
   return (
     <div className="space-y-6">
-      <section className="bg-white rounded-2xl border border-slate-200 p-5">
+      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
         <h2 className="font-semibold mb-3">1. 종목 선택</h2>
         <div className="grid grid-cols-3 gap-2">
           {GAME_TYPES.map((gt) => {
@@ -255,8 +255,8 @@ export default function NewGameForm({
                 onClick={() => setGameType(gt)}
                 className={`flex items-center justify-center gap-1.5 rounded-lg border-2 px-3 py-2 text-sm font-medium transition ${
                   selected
-                    ? "border-emerald-600 bg-emerald-50 text-emerald-900"
-                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                    ? "border-emerald-600 bg-emerald-500/10 text-emerald-200"
+                    : "border-slate-800 text-slate-300 hover:bg-slate-700"
                 }`}
               >
                 {selected && <CheckIcon />}
@@ -267,7 +267,7 @@ export default function NewGameForm({
         </div>
       </section>
 
-      <section className="bg-white rounded-2xl border border-slate-200 p-5">
+      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
         <h2 className="font-semibold mb-3">
           2. 참가자 선택 ({attendeeIds.length}명)
         </h2>
@@ -279,8 +279,8 @@ export default function NewGameForm({
                 key={p.id}
                 className={`flex items-center gap-2 rounded-lg border-2 px-3 py-2 text-sm cursor-pointer transition ${
                   checked
-                    ? "border-emerald-600 bg-emerald-50 text-emerald-900"
-                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                    ? "border-emerald-600 bg-emerald-500/10 text-emerald-200"
+                    : "border-slate-800 text-slate-300 hover:bg-slate-700"
                 }`}
               >
                 <input
@@ -293,7 +293,7 @@ export default function NewGameForm({
                   className={`flex items-center justify-center w-4 h-4 rounded-full border shrink-0 ${
                     checked
                       ? "border-emerald-600 bg-emerald-600 text-white"
-                      : "border-slate-300 bg-white"
+                      : "border-slate-700 bg-slate-900"
                   }`}
                 >
                   {checked && <CheckIcon />}
@@ -303,15 +303,15 @@ export default function NewGameForm({
             );
           })}
         </div>
-        <p className="text-xs text-slate-400 mt-3">
+        <p className="text-xs text-slate-500 mt-3">
           기본값은 이전 게임 참가자와 동일합니다. 필요하면 체크를 바꿔주세요.
         </p>
       </section>
 
       {attendeeIds.length >= 2 && (
-        <section className="bg-white rounded-2xl border border-slate-200 p-5">
+        <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
           <h2 className="font-semibold mb-1">3. 결과 입력</h2>
-          <p className="text-xs text-slate-400 mb-4">
+          <p className="text-xs text-slate-500 mb-4">
             드래그하거나, Lose → Win 순서로 탭하세요 (Lose가 Win에게 점수를
             지급합니다).
           </p>
@@ -343,7 +343,7 @@ export default function NewGameForm({
               {selectedParticipants.map((p) => (
                 <div
                   key={p.id}
-                  className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-center text-slate-400"
+                  className="rounded-xl border border-slate-800 bg-slate-800 px-4 py-3 text-sm font-medium text-center text-slate-500"
                 >
                   {p.name}
                 </div>
@@ -354,14 +354,14 @@ export default function NewGameForm({
       )}
 
       {pending && (
-        <section className="bg-white rounded-2xl border-2 border-slate-900 p-5 space-y-4">
+        <section className="bg-slate-900 rounded-2xl border-2 border-slate-100 p-5 space-y-4">
           <h2 className="font-semibold">4. 확인 및 기록</h2>
           <p className="text-sm">
             <span className="font-semibold text-red-500">
               {nameMap.get(pending.loserId)}
             </span>
             (Lose) →{" "}
-            <span className="font-semibold text-emerald-600">
+            <span className="font-semibold text-emerald-400">
               {nameMap.get(pending.winnerId)}
             </span>
             (Win)에게{" "}
@@ -370,12 +370,12 @@ export default function NewGameForm({
           </p>
           <div className="flex gap-3 flex-wrap items-end">
             <div>
-              <label className="block text-xs text-slate-500 mb-1">점수</label>
+              <label className="block text-xs text-slate-400 mb-1">점수</label>
               <div className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => setPoints((p) => Math.max(1, p - 1))}
-                  className="w-8 h-8 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 flex items-center justify-center"
+                  className="w-8 h-8 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-700 flex items-center justify-center"
                   aria-label="점수 감소"
                 >
                   −
@@ -388,12 +388,12 @@ export default function NewGameForm({
                   onChange={(e) =>
                     setPoints(Math.max(1, Math.round(Number(e.target.value) || 1)))
                   }
-                  className="w-14 rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-center"
+                  className="bg-slate-900 w-14 rounded-lg border border-slate-700 px-2 py-1.5 text-sm text-center"
                 />
                 <button
                   type="button"
                   onClick={() => setPoints((p) => p + 1)}
-                  className="w-8 h-8 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 flex items-center justify-center"
+                  className="w-8 h-8 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-700 flex items-center justify-center"
                   aria-label="점수 증가"
                 >
                   +
@@ -401,7 +401,7 @@ export default function NewGameForm({
               </div>
             </div>
             <div className="flex-1 min-w-[160px]">
-              <label className="block text-xs text-slate-500 mb-1">
+              <label className="block text-xs text-slate-400 mb-1">
                 메모 (선택)
               </label>
               <input
@@ -409,26 +409,26 @@ export default function NewGameForm({
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="예: 재대결"
-                className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+                className="bg-slate-900 w-full rounded-lg border border-slate-700 px-3 py-1.5 text-sm"
               />
             </div>
           </div>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-slate-500">
             날짜·시간은 기록하는 지금 이 순간으로 자동 저장됩니다.
           </p>
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button
               onClick={handleConfirm}
               disabled={isSaving}
-              className="rounded-lg bg-slate-900 text-white text-sm font-medium px-4 py-2 hover:bg-slate-800 transition disabled:opacity-50"
+              className="rounded-lg bg-slate-100 text-slate-900 text-sm font-medium px-4 py-2 hover:bg-slate-300 transition disabled:opacity-50"
             >
               {isSaving ? "기록 중..." : "이 결과로 기록하기"}
             </button>
             <button
               onClick={() => setPendingResult(null)}
               disabled={isSaving}
-              className="rounded-lg bg-slate-100 text-slate-600 text-sm font-medium px-4 py-2 hover:bg-slate-200 transition"
+              className="rounded-lg bg-slate-800 text-slate-300 text-sm font-medium px-4 py-2 hover:bg-slate-600 transition"
             >
               취소
             </button>

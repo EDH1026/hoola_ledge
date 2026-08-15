@@ -15,13 +15,13 @@ export default async function NewGamePage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">새 게임 기록</h1>
-        <p className="text-sm text-slate-500 mt-1">
+        <p className="text-sm text-slate-400 mt-1">
           종목과 참가자를 고르고, Lose를 Win에게 드래그하면 결과가 기록됩니다.
         </p>
       </div>
 
       {activeParticipants.length < 2 ? (
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 text-sm text-slate-500">
+        <div className="bg-slate-900 rounded-2xl border border-slate-800 p-5 text-sm text-slate-400">
           먼저{" "}
           <a href="/participants" className="underline">
             참가자

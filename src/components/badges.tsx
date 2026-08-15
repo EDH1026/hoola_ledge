@@ -8,16 +8,16 @@ import {
 import type { Tier } from "@/lib/stats";
 
 const GAME_TYPE_STYLES: Record<GameType, string> = {
-  hoola: "bg-indigo-50 text-indigo-700 border-indigo-200",
-  citadels: "bg-purple-50 text-purple-700 border-purple-200",
-  "6nimmt": "bg-orange-50 text-orange-700 border-orange-200",
+  hoola: "bg-indigo-500/10 text-indigo-300 border-indigo-800",
+  citadels: "bg-purple-500/10 text-purple-300 border-purple-800",
+  "6nimmt": "bg-orange-500/10 text-orange-300 border-orange-800",
 };
 
 export function GameTypeBadge({ gameType }: { gameType?: GameType }) {
   const label = gameType ? GAME_TYPE_LABELS[gameType] : "종목 미지정";
   const style = gameType
     ? GAME_TYPE_STYLES[gameType]
-    : "bg-slate-50 text-slate-400 border-slate-200";
+    : "bg-slate-800 text-slate-500 border-slate-800";
   return (
     <span
       className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${style}`}
@@ -28,8 +28,8 @@ export function GameTypeBadge({ gameType }: { gameType?: GameType }) {
 }
 
 const SETTLEMENT_TYPE_STYLES: Record<WritableSettlementType, string> = {
-  payment: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  donation: "bg-amber-50 text-amber-700 border-amber-200",
+  payment: "bg-emerald-500/10 text-emerald-300 border-emerald-800",
+  donation: "bg-amber-500/10 text-amber-300 border-amber-800",
 };
 
 const SETTLEMENT_TYPE_LABELS: Record<WritableSettlementType, string> = {
@@ -53,7 +53,7 @@ export function SettlementTypeBadge({ type }: { type?: SettlementType }) {
 /** Marks a soft-deleted (active: false) record in admin-only views — e.g. the games list, where admins (unlike everyone else) can see inactive rows. */
 export function InactiveBadge() {
   return (
-    <span className="inline-flex items-center rounded-full border border-slate-300 bg-slate-100 text-slate-500 px-2 py-0.5 text-xs font-medium whitespace-nowrap">
+    <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-800 text-slate-400 px-2 py-0.5 text-xs font-medium whitespace-nowrap">
       비활성
     </span>
   );
@@ -70,7 +70,7 @@ export function GameNightBadge({ businessDate }: { businessDate: string }) {
   const label = `${Number(businessDate.slice(5, 7))}/${Number(businessDate.slice(8, 10))} 게임밤`;
   return (
     <span
-      className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700 px-2 py-0.5 text-xs font-medium whitespace-nowrap"
+      className="inline-flex items-center rounded-full border border-indigo-800 bg-indigo-500/10 text-indigo-300 px-2 py-0.5 text-xs font-medium whitespace-nowrap"
       title={`영업일 기준 ${businessDate}의 게임 밤으로 묶임`}
     >
       {label}
@@ -80,7 +80,7 @@ export function GameNightBadge({ businessDate }: { businessDate: string }) {
 
 export function LedgerAdjustmentBadge() {
   return (
-    <span className="inline-flex items-center rounded-full border border-slate-300 bg-slate-100 text-slate-600 px-2 py-0.5 text-xs font-medium whitespace-nowrap">
+    <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-800 text-slate-300 px-2 py-0.5 text-xs font-medium whitespace-nowrap">
       과거 기록
     </span>
   );
@@ -109,12 +109,12 @@ export function StreakBadge({
   length: number;
 }) {
   if (!type || length === 0) {
-    return <span className="text-xs text-slate-400">-</span>;
+    return <span className="text-xs text-slate-500">-</span>;
   }
   const style =
     type === "W"
-      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-      : "bg-red-50 text-red-600 border-red-200";
+      ? "bg-emerald-500/10 text-emerald-300 border-emerald-800"
+      : "bg-red-500/10 text-red-400 border-red-800";
   return (
     <span
       className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${style}`}
@@ -130,14 +130,14 @@ export function StreakBadge({
 // (purple) — fuchsia reads as a step up from sky without competing with
 // challenger's purple.
 const TIER_STYLES: Record<Tier, string> = {
-  unranked: "bg-slate-50 text-slate-400 border-slate-200",
-  bronze: "bg-orange-50 text-orange-800 border-orange-200",
-  silver: "bg-slate-100 text-slate-600 border-slate-300",
-  gold: "bg-amber-50 text-amber-700 border-amber-300",
-  platinum: "bg-teal-50 text-teal-700 border-teal-200",
-  diamond: "bg-sky-50 text-sky-700 border-sky-200",
-  master: "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200",
-  challenger: "bg-purple-50 text-purple-700 border-purple-300",
+  unranked: "bg-slate-800 text-slate-500 border-slate-800",
+  bronze: "bg-orange-500/10 text-orange-300 border-orange-800",
+  silver: "bg-slate-800 text-slate-300 border-slate-700",
+  gold: "bg-amber-500/10 text-amber-300 border-amber-700",
+  platinum: "bg-teal-500/10 text-teal-300 border-teal-800",
+  diamond: "bg-sky-500/10 text-sky-300 border-sky-800",
+  master: "bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-800",
+  challenger: "bg-purple-500/10 text-purple-300 border-purple-700",
 };
 
 const TIER_LABELS: Record<Tier, string> = {

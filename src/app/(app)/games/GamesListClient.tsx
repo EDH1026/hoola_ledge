@@ -149,14 +149,14 @@ export default function GamesListClient({
 
   return (
     <div className="space-y-4">
-      <section className="bg-white rounded-2xl border border-slate-200 p-4">
+      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-4">
         <div className="flex flex-wrap items-end gap-4">
           <div>
-            <span className="text-xs text-slate-400 block mb-1">연도</span>
+            <span className="text-xs text-slate-500 block mb-1">연도</span>
             <select
               value={year}
               onChange={(e) => setYear(e.target.value)}
-              className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              className="bg-slate-900 rounded-lg border border-slate-700 px-2 py-1.5 text-sm"
             >
               <option value="all">전체</option>
               {years.map((y) => (
@@ -167,11 +167,11 @@ export default function GamesListClient({
             </select>
           </div>
           <div>
-            <span className="text-xs text-slate-400 block mb-1">월</span>
+            <span className="text-xs text-slate-500 block mb-1">월</span>
             <select
               value={month}
               onChange={(e) => setMonth(e.target.value)}
-              className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              className="bg-slate-900 rounded-lg border border-slate-700 px-2 py-1.5 text-sm"
             >
               <option value="all">전체</option>
               {MONTHS.map((m) => (
@@ -182,11 +182,11 @@ export default function GamesListClient({
             </select>
           </div>
           <div>
-            <span className="text-xs text-slate-400 block mb-1">일</span>
+            <span className="text-xs text-slate-500 block mb-1">일</span>
             <select
               value={day}
               onChange={(e) => setDay(e.target.value)}
-              className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              className="bg-slate-900 rounded-lg border border-slate-700 px-2 py-1.5 text-sm"
             >
               <option value="all">전체</option>
               {DAYS.map((d) => (
@@ -196,11 +196,11 @@ export default function GamesListClient({
               ))}
             </select>
           </div>
-          <div className="ml-auto text-sm text-slate-500 text-right">
+          <div className="ml-auto text-sm text-slate-400 text-right">
             {activeFiltered.length}회 · 점수 합계{" "}
-            <span className="font-semibold text-slate-900">{pointsSum}점</span>
+            <span className="font-semibold text-slate-100">{pointsSum}점</span>
             {isAdmin && inactiveCount > 0 && (
-              <span className="block text-xs text-slate-400 mt-0.5">
+              <span className="block text-xs text-slate-500 mt-0.5">
                 (비활성 {inactiveCount}건은 집계에서 제외 · 목록에는 표시됨)
               </span>
             )}
@@ -215,17 +215,17 @@ export default function GamesListClient({
         today={today}
       />
 
-      <section className="bg-white rounded-2xl border border-slate-200 p-4">
+      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-4">
         <h2 className="text-sm font-semibold mb-3">이 구간 인별 점수</h2>
         {pointTotals.length === 0 ? (
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-slate-500">
             이 구간에 집계할 게임이 없습니다.
           </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-slate-400 text-xs">
+                <tr className="text-left text-slate-500 text-xs">
                   <th className="py-1.5 pr-4">순위</th>
                   <th className="py-1.5 pr-4">이름</th>
                   <th className="py-1.5 pr-4">딴 점수</th>
@@ -235,18 +235,18 @@ export default function GamesListClient({
               </thead>
               <tbody>
                 {pointTotals.map((p, i) => (
-                  <tr key={p.id} className="border-t border-slate-100">
-                    <td className="py-1.5 pr-4 text-slate-400">{i + 1}</td>
+                  <tr key={p.id} className="border-t border-slate-800">
+                    <td className="py-1.5 pr-4 text-slate-500">{i + 1}</td>
                     <td className="py-1.5 pr-4 font-medium">{p.name}</td>
-                    <td className="py-1.5 pr-4 text-emerald-600">{p.pointsWon}</td>
+                    <td className="py-1.5 pr-4 text-emerald-400">{p.pointsWon}</td>
                     <td className="py-1.5 pr-4 text-red-500">{p.pointsLost}</td>
                     <td
                       className={`py-1.5 pr-4 font-semibold ${
                         p.netPoints > 0
-                          ? "text-emerald-600"
+                          ? "text-emerald-400"
                           : p.netPoints < 0
                           ? "text-red-500"
-                          : "text-slate-400"
+                          : "text-slate-500"
                       }`}
                     >
                       {p.netPoints > 0 ? "+" : ""}
@@ -260,13 +260,13 @@ export default function GamesListClient({
         )}
       </section>
 
-      <section className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+      <section className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden">
         {filtered.length === 0 ? (
-          <p className="text-sm text-slate-400 p-5">
+          <p className="text-sm text-slate-500 p-5">
             조건에 맞는 게임 기록이 없습니다.
           </p>
         ) : (
-          <ul className="divide-y divide-slate-100">
+          <ul className="divide-y divide-slate-800">
             {filtered.map((g) => {
               const seq = sequenceNumbers[g.id];
               const attendeeNames = g.attendeeIds.map(
@@ -289,10 +289,10 @@ export default function GamesListClient({
               const canEdit = isAdmin || (!inactive && editableByUser);
               const canDelete = !inactive && (isAdmin || editableByUser);
               return (
-                <li key={g.id} className={`p-4 space-y-2 ${inactive ? "bg-slate-50" : ""}`}>
+                <li key={g.id} className={`p-4 space-y-2 ${inactive ? "bg-slate-800" : ""}`}>
                   <div className="flex flex-wrap items-center gap-2 justify-between">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm text-slate-400 whitespace-nowrap">
+                      <span className="text-sm text-slate-500 whitespace-nowrap">
                         {format(new Date(wallClock.date), "yyyy-MM-dd")}
                         {wallClock.time ? ` ${wallClock.time}` : ""}
                         {seq ? ` · ${seq}차전` : ""}
@@ -306,14 +306,14 @@ export default function GamesListClient({
                     <div className="flex items-center gap-3">
                       {isAdmin && confirmHardDeleteId === g.id ? (
                         <span className="flex items-center gap-2 text-xs">
-                          <span className="text-red-700 font-medium">
+                          <span className="text-red-300 font-medium">
                             완전 삭제할까요? 되돌릴 수 없습니다.
                           </span>
                           <button
                             type="button"
                             onClick={() => handleHardDelete(g.id)}
                             disabled={isHardDeleting}
-                            className="text-red-700 font-semibold hover:underline disabled:opacity-50"
+                            className="text-red-300 font-semibold hover:underline disabled:opacity-50"
                           >
                             {isHardDeleting ? "삭제 중..." : "확인"}
                           </button>
@@ -321,7 +321,7 @@ export default function GamesListClient({
                             type="button"
                             onClick={() => setConfirmHardDeleteId(null)}
                             disabled={isHardDeleting}
-                            className="text-slate-400 hover:text-slate-700"
+                            className="text-slate-500 hover:text-slate-200"
                           >
                             취소
                           </button>
@@ -332,7 +332,7 @@ export default function GamesListClient({
                             <button
                               type="button"
                               onClick={() => setEditingId(isEditing ? null : g.id)}
-                              className="text-xs font-medium text-slate-500 hover:text-slate-900"
+                              className="text-xs font-medium text-slate-400 hover:text-slate-100"
                             >
                               {isEditing ? "닫기" : "수정"}
                             </button>
@@ -342,7 +342,7 @@ export default function GamesListClient({
                               type="button"
                               onClick={() => handleDelete(g.id)}
                               disabled={isPending && deletingId === g.id}
-                              className="text-xs text-slate-300 hover:text-red-600 disabled:opacity-50"
+                              className="text-xs text-slate-600 hover:text-red-400 disabled:opacity-50"
                             >
                               {isPending && deletingId === g.id ? "삭제 중..." : "삭제"}
                             </button>
@@ -351,13 +351,13 @@ export default function GamesListClient({
                             <button
                               type="button"
                               onClick={() => setConfirmHardDeleteId(g.id)}
-                              className="text-xs text-slate-300 hover:text-red-700"
+                              className="text-xs text-slate-600 hover:text-red-300"
                             >
                               완전삭제
                             </button>
                           )}
                           {!canEdit && !canDelete && (
-                            <span className="text-xs text-slate-300">
+                            <span className="text-xs text-slate-600">
                               기록 후 2시간이 지나 수정·삭제할 수 없습니다.
                             </span>
                           )}
@@ -366,26 +366,26 @@ export default function GamesListClient({
                     </div>
                   </div>
                   {deleteError?.id === g.id && (
-                    <p className="text-xs text-red-600">{deleteError.message}</p>
+                    <p className="text-xs text-red-400">{deleteError.message}</p>
                   )}
                   <div className={`text-sm ${inactive ? "opacity-60" : ""}`}>
-                    <span className="font-semibold text-emerald-600">
+                    <span className="font-semibold text-emerald-400">
                       {nameMap.get(g.winnerId) ?? "(삭제됨)"}
                     </span>
-                    <span className="text-slate-400 mx-1.5">Win · Lose</span>
+                    <span className="text-slate-500 mx-1.5">Win · Lose</span>
                     <span className="font-semibold text-red-500">
                       {nameMap.get(g.loserId) ?? "(삭제됨)"}
                     </span>
-                    <span className="text-xs text-slate-400 ml-2">
+                    <span className="text-xs text-slate-500 ml-2">
                       · {points}점
                     </span>
                     {g.note && (
-                      <span className="text-xs text-slate-400 ml-2">
+                      <span className="text-xs text-slate-500 ml-2">
                         · {g.note}
                       </span>
                     )}
                   </div>
-                  <p className={`text-xs ${inactive ? "text-slate-300" : "text-slate-400"}`}>
+                  <p className={`text-xs ${inactive ? "text-slate-600" : "text-slate-500"}`}>
                     참석 {g.attendeeIds.length}명 · {attendeeNames.join(", ")}
                   </p>
 
@@ -422,17 +422,17 @@ function DiffRow({
   const changed = before !== after;
   return (
     <div className="text-sm flex flex-wrap gap-x-2">
-      <span className="text-slate-400 w-16 shrink-0">{label}</span>
+      <span className="text-slate-500 w-16 shrink-0">{label}</span>
       {changed ? (
         <span>
-          <span className="text-slate-400 line-through decoration-slate-300">
+          <span className="text-slate-500 line-through decoration-slate-300">
             {before}
           </span>
-          <span className="text-slate-400 mx-1.5">→</span>
-          <span className="font-semibold text-slate-900">{after}</span>
+          <span className="text-slate-500 mx-1.5">→</span>
+          <span className="font-semibold text-slate-100">{after}</span>
         </span>
       ) : (
-        <span className="text-slate-600">{before}</span>
+        <span className="text-slate-300">{before}</span>
       )}
     </div>
   );
@@ -569,7 +569,7 @@ function GameEditForm({
 
   if (step === "confirm") {
     return (
-      <div className="rounded-xl border-2 border-slate-900 bg-white p-4 space-y-2.5">
+      <div className="rounded-xl border-2 border-slate-100 bg-slate-900 p-4 space-y-2.5">
         <h3 className="text-sm font-semibold mb-1">변경 내용 확인</h3>
         <DiffRow label="종목" before={gameTypeLabel(game.gameType)} after={gameTypeLabel(gameType)} />
         <DiffRow
@@ -589,7 +589,7 @@ function GameEditForm({
             <DiffRow label="날짜" before={initialCalendarDate} after={calendarDate} />
             <DiffRow label="시간" before={game.time || "(없음)"} after={time} />
             {crossesToPreviousBusinessDay && (
-              <p className="text-xs text-indigo-700 pl-16">
+              <p className="text-xs text-indigo-300 pl-16">
                 → 영업일 기준으로는 전날({businessDate})의 게임으로 저장됩니다.
               </p>
             )}
@@ -598,11 +598,11 @@ function GameEditForm({
         )}
 
         {isAdmin && dateOrTimeChanged && (
-          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-800 rounded-lg px-3 py-2">
             날짜·시간을 바꾸면 N차전 번호와 날짜 필터 결과가 달라질 수 있습니다.
           </p>
         )}
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-red-400">{error}</p>}
 
         <div className="flex gap-2 pt-1">
           <button
@@ -617,7 +617,7 @@ function GameEditForm({
             type="button"
             onClick={() => setStep("form")}
             disabled={isSaving}
-            className="rounded-lg bg-slate-100 text-slate-600 text-sm font-medium px-4 py-2 hover:bg-slate-200 transition"
+            className="rounded-lg bg-slate-800 text-slate-300 text-sm font-medium px-4 py-2 hover:bg-slate-600 transition"
           >
             돌아가기
           </button>
@@ -627,9 +627,9 @@ function GameEditForm({
   }
 
   return (
-    <div className="rounded-xl border border-slate-300 bg-slate-50 p-4 space-y-4">
+    <div className="rounded-xl border border-slate-700 bg-slate-800 p-4 space-y-4">
       <div>
-        <span className="text-xs text-slate-500 block mb-1.5">종목</span>
+        <span className="text-xs text-slate-400 block mb-1.5">종목</span>
         <div className="grid grid-cols-3 gap-2">
           {GAME_TYPES.map((gt) => {
             const selected = gameType === gt;
@@ -640,8 +640,8 @@ function GameEditForm({
                 onClick={() => setGameType(gt)}
                 className={`flex items-center justify-center gap-1.5 rounded-lg border-2 px-3 py-2 text-sm font-medium transition ${
                   selected
-                    ? "border-emerald-600 bg-emerald-50 text-emerald-900"
-                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
+                    ? "border-emerald-600 bg-emerald-500/10 text-emerald-200"
+                    : "border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-700"
                 }`}
               >
                 {selected && <CheckIcon />}
@@ -653,7 +653,7 @@ function GameEditForm({
       </div>
 
       <div>
-        <span className="text-xs text-slate-500 block mb-1.5">
+        <span className="text-xs text-slate-400 block mb-1.5">
           참가자 ({attendeeIds.length}명)
         </span>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -664,8 +664,8 @@ function GameEditForm({
                 key={p.id}
                 className={`flex items-center gap-2 rounded-lg border-2 px-3 py-2 text-sm cursor-pointer transition ${
                   checked
-                    ? "border-emerald-600 bg-emerald-50 text-emerald-900"
-                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
+                    ? "border-emerald-600 bg-emerald-500/10 text-emerald-200"
+                    : "border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-700"
                 }`}
               >
                 <input
@@ -678,7 +678,7 @@ function GameEditForm({
                   className={`flex items-center justify-center w-4 h-4 rounded-full border shrink-0 ${
                     checked
                       ? "border-emerald-600 bg-emerald-600 text-white"
-                      : "border-slate-300 bg-white"
+                      : "border-slate-700 bg-slate-900"
                   }`}
                 >
                   {checked && <CheckIcon />}
@@ -692,11 +692,11 @@ function GameEditForm({
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs text-slate-500 mb-1">Win</label>
+          <label className="block text-xs text-slate-400 mb-1">Win</label>
           <select
             value={winnerId}
             onChange={(e) => setWinnerId(e.target.value)}
-            className="w-full rounded-lg border-2 border-emerald-200 bg-white px-2 py-1.5 text-sm"
+            className="w-full rounded-lg border-2 border-emerald-800 bg-slate-900 px-2 py-1.5 text-sm"
           >
             <option value="">선택</option>
             {selectableAttendees.map((p) => (
@@ -707,11 +707,11 @@ function GameEditForm({
           </select>
         </div>
         <div>
-          <label className="block text-xs text-slate-500 mb-1">Lose</label>
+          <label className="block text-xs text-slate-400 mb-1">Lose</label>
           <select
             value={loserId}
             onChange={(e) => setLoserId(e.target.value)}
-            className="w-full rounded-lg border-2 border-red-200 bg-white px-2 py-1.5 text-sm"
+            className="w-full rounded-lg border-2 border-red-800 bg-slate-900 px-2 py-1.5 text-sm"
           >
             <option value="">선택</option>
             {selectableAttendees.map((p) => (
@@ -725,12 +725,12 @@ function GameEditForm({
 
       <div className="flex gap-3 flex-wrap items-end">
         <div>
-          <label className="block text-xs text-slate-500 mb-1">점수</label>
+          <label className="block text-xs text-slate-400 mb-1">점수</label>
           <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={() => setPoints((p) => Math.max(1, p - 1))}
-              className="w-8 h-8 rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 flex items-center justify-center"
+              className="w-8 h-8 rounded-lg border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-700 flex items-center justify-center"
               aria-label="점수 감소"
             >
               −
@@ -743,12 +743,12 @@ function GameEditForm({
               onChange={(e) =>
                 setPoints(Math.max(1, Math.round(Number(e.target.value) || 1)))
               }
-              className="w-14 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-center"
+              className="w-14 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-center"
             />
             <button
               type="button"
               onClick={() => setPoints((p) => p + 1)}
-              className="w-8 h-8 rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 flex items-center justify-center"
+              className="w-8 h-8 rounded-lg border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-700 flex items-center justify-center"
               aria-label="점수 증가"
             >
               +
@@ -756,13 +756,13 @@ function GameEditForm({
           </div>
         </div>
         <div className="flex-1 min-w-[160px]">
-          <label className="block text-xs text-slate-500 mb-1">메모 (선택)</label>
+          <label className="block text-xs text-slate-400 mb-1">메모 (선택)</label>
           <input
             type="text"
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="예: 재대결"
-            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm"
+            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm"
           />
         </div>
       </div>
@@ -771,66 +771,66 @@ function GameEditForm({
         <>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-slate-500 mb-1">
+              <label className="block text-xs text-slate-400 mb-1">
                 날짜 (실제 게임한 날짜)
               </label>
               <input
                 type="date"
                 value={calendarDate}
                 onChange={(e) => setCalendarDate(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm"
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-500 mb-1">시간 (24시간제)</label>
+              <label className="block text-xs text-slate-400 mb-1">시간 (24시간제)</label>
               <input
                 type="time"
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm"
               />
             </div>
           </div>
-          <p className="text-xs text-amber-700">
+          <p className="text-xs text-amber-300">
             ※ 날짜·시간은 이 관리자 수정 화면에서만 바꿀 수 있어요. 실제로
             게임한 날짜·시간을 그대로 입력하면 됩니다 — 변경하면 N차전 번호와
             날짜 필터 결과가 달라질 수 있습니다.
           </p>
           {crossesToPreviousBusinessDay && (
-            <p className="text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2">
+            <p className="text-xs text-indigo-300 bg-indigo-500/10 border border-indigo-800 rounded-lg px-3 py-2">
               06:00 이전 시각이라, 이 앱의 하루 기준(06:00~다음 날 06:00)으로는{" "}
               <strong>전날 {businessDate}</strong>의 게임으로 자동 저장됩니다.
             </p>
           )}
 
-          <label className="flex items-center gap-2 text-sm text-slate-700">
+          <label className="flex items-center gap-2 text-sm text-slate-300">
             <input
               type="checkbox"
               checked={active}
               onChange={(e) => setActive(e.target.checked)}
             />
             활성 상태
-            <span className="text-xs text-slate-400">
+            <span className="text-xs text-slate-500">
               (해제 시 삭제된 것처럼 정산·통계에서 제외됩니다)
             </span>
           </label>
         </>
       )}
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
 
       <div className="flex gap-2">
         <button
           type="button"
           onClick={handleReview}
-          className="rounded-lg bg-slate-900 text-white text-sm font-medium px-4 py-2 hover:bg-slate-800 transition"
+          className="rounded-lg bg-slate-100 text-slate-900 text-sm font-medium px-4 py-2 hover:bg-slate-300 transition"
         >
           변경 내용 확인
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-lg bg-slate-100 text-slate-600 text-sm font-medium px-4 py-2 hover:bg-slate-200 transition"
+          className="rounded-lg bg-slate-800 text-slate-300 text-sm font-medium px-4 py-2 hover:bg-slate-600 transition"
         >
           취소
         </button>

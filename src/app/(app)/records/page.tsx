@@ -10,7 +10,7 @@ export default async function RecordsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">통산기록</h1>
-        <p className="text-sm text-slate-500 mt-1">
+        <p className="text-sm text-slate-400 mt-1">
           분기 티어, 최근 3개월 성향, 통산 명예의 전당을 확인할 수 있습니다.
         </p>
       </div>
