@@ -372,12 +372,13 @@ export default async function DashboardPage() {
                   </div>
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="tabular-nums">
-                      <span className="text-emerald-400 font-medium">
-                        {nameOf(nameMap, g.winnerId)}
-                      </span>
-                      <span className="text-content-muted mx-1.5">→</span>
+                      {/* 화살표는 점수가 흐르는 방향(패자 -> 승자)을 가리킨다. */}
                       <span className="text-lose font-medium">
                         {nameOf(nameMap, g.loserId)}
+                      </span>
+                      <span className="text-content-muted mx-1.5">→</span>
+                      <span className="text-emerald-400 font-medium">
+                        {nameOf(nameMap, g.winnerId)}
                       </span>
                     </span>
                     <span className="text-base font-semibold text-content tabular-nums shrink-0">

@@ -522,12 +522,14 @@ export default function GamesListClient({
 
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="text-sm tabular-nums truncate">
-                        <span className="font-semibold text-emerald-400">
-                          {nameMap.get(g.winnerId) ?? "(삭제됨)"}
-                        </span>
-                        <span className="text-content-muted mx-1.5">→</span>
+                        {/* 화살표는 점수가 흐르는 방향(패자 -> 승자, 정산
+                            화면과 같은 채무자 -> 채권자 관례)을 가리킨다. */}
                         <span className="font-semibold text-lose">
                           {nameMap.get(g.loserId) ?? "(삭제됨)"}
+                        </span>
+                        <span className="text-content-muted mx-1.5">→</span>
+                        <span className="font-semibold text-emerald-400">
+                          {nameMap.get(g.winnerId) ?? "(삭제됨)"}
                         </span>
                       </span>
                       {/* v2.19 (PRD §24.5) — 장부 앱의 핵심 값인 점수를
