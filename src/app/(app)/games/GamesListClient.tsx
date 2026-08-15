@@ -1,28 +1,36 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { format } from "date-fns";
-import { Check } from "lucide-react";
-import { deleteGame, hardDeleteGame, updateGame } from "@/lib/actions";
+import { Check, Pencil, Trash2 } from "lucide-react";
+import { deleteGame, restoreGame, hardDeleteGame, updateGame } from "@/lib/actions";
 import { isActiveGame, withinDayKey } from "@/lib/games";
 import {
   todayInSeoul,
   isWithinEditWindow,
   gameWallClock,
   businessDateFromWallClock,
+  EDIT_WINDOW_MS,
 } from "@/lib/time";
+import { daysInMonth } from "@/lib/calendar";
 import {
   GAME_TYPE_LABELS,
   GAME_TYPES,
   GameResult,
   GameType,
 } from "@/lib/types";
+import { GameTypeFilter } from "@/lib/stats";
 import { GameTypeBadge, InactiveBadge, GameNightBadge } from "@/components/badges";
 import { computeParticipantPointTotals } from "@/lib/stats";
 import { Card } from "@/components/ui/Card";
-import { SectionTitle } from "@/components/ui/SectionTitle";
 import { Button } from "@/components/ui/Button";
+import { FilterChip } from "@/components/ui/FilterChip";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { OverflowMenu, OverflowMenuItem } from "@/components/ui/OverflowMenu";
+import { UndoStack, useUndoStack } from "@/components/ui/UndoStack";
+import { EditWindowChip } from "@/components/ui/EditWindowChip";
 import GameCalendar from "./GameCalendar";
 
 interface ParticipantLite {
@@ -30,11 +38,18 @@ interface ParticipantLite {
   name: string;
 }
 
-const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
-const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
+const GAME_TYPE_OPTIONS: { value: GameTypeFilter; label: string }[] = [
+  { value: "all", label: "전체" },
+  ...GAME_TYPES.map((gt) => ({ value: gt as GameTypeFilter, label: GAME_TYPE_LABELS[gt] })),
+];
 
 function gameTypeLabel(gt?: GameType): string {
   return gt ? GAME_TYPE_LABELS[gt] : "종목 미지정";
+}
+
+function applyOrDelete(params: URLSearchParams, key: string, value: string, defaultValue: string) {
+  if (value === defaultValue) params.delete(key);
+  else params.set(key, value);
 }
 
 export default function GamesListClient({
@@ -48,58 +63,138 @@ export default function GamesListClient({
   sequenceNumbers: Record<string, number>;
   isAdmin: boolean;
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const nameMap = useMemo(
     () => new Map(participants.map((p) => [p.id, p.name])),
     [participants]
   );
 
-  // Defaults the filter to today (Asia/Seoul) rather than "전체" — this
-  // screen is mainly used right after a game night, so showing today's
-  // games first matches how it's actually used. Unpadded via String(Number())
-  // to match the comparison the filter below already does against `month`/
-  // `day` ("08" would never equal "8" otherwise).
   const today = todayInSeoul();
-  const todayYear = today.slice(0, 4);
-  const todayMonth = String(Number(today.slice(5, 7)));
-  const todayDay = String(Number(today.slice(8, 10)));
+
+  // v2.19 (배치 B, PRD §24.10/§24.12) — 기본 필터가 "오늘"이면 게임 밤이
+  // 아닌 날 앱을 켤 때마다 빈 화면부터 보게 된다. 대시보드의 "최근 게임"
+  // 섹션과 같은 로직(가장 최근 활성 게임의 영업일)으로 기본값을 잡는다.
+  // 게임이 하나도 없으면 오늘로 폴백.
+  const mostRecentGameDate = useMemo(
+    () =>
+      games
+        .filter(isActiveGame)
+        .reduce((latest, g) => (g.date > latest ? g.date : latest), ""),
+    [games]
+  );
+  const defaultDateSource = mostRecentGameDate || today;
+  const defaultYear = defaultDateSource.slice(0, 4);
+  const defaultMonth = String(Number(defaultDateSource.slice(5, 7)));
+  const defaultDay = String(Number(defaultDateSource.slice(8, 10)));
+
+  // v2.19 (배치 B, PRD §24.12) — 필터를 URL 검색 파라미터로 동기화한다.
+  // 파라미터가 없으면 위에서 계산한 기본값("가장 최근 게임일")을 쓰고,
+  // "전체"는 그 자체로 값이 다르므로 항상 명시적으로 기록된다(그래야
+  // "기본값"과 "명시적 전체"가 URL 위에서 구별된다).
+  const year = searchParams.get("y") ?? defaultYear;
+  const month = searchParams.get("m") ?? defaultMonth;
+  const day = searchParams.get("d") ?? defaultDay;
+  const gameTypeFilter = (searchParams.get("type") as GameTypeFilter | null) ?? "all";
+
+  function replaceParams(params: URLSearchParams) {
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
+
+  function setYearMonth(newYear: string, newMonth: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    applyOrDelete(params, "y", newYear, defaultYear);
+    applyOrDelete(params, "m", newMonth, defaultMonth);
+    // 새 연·월에 존재하지 않는 일(예: 2월 30일)이 선택돼 있으면 전체로
+    // 리셋한다 — 안 그러면 조용히 빈 목록만 남는다.
+    if (day !== "all" && newYear !== "all" && newMonth !== "all") {
+      const maxDay = daysInMonth(Number(newYear), Number(newMonth));
+      if (Number(day) > maxDay) params.delete("d");
+    }
+    replaceParams(params);
+  }
+  const setYear = (v: string) => setYearMonth(v, month);
+  const setMonth = (v: string) => setYearMonth(year, v);
+  function setDay(v: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    applyOrDelete(params, "d", v, defaultDay);
+    replaceParams(params);
+  }
+  function setGameTypeFilter(v: GameTypeFilter) {
+    const params = new URLSearchParams(searchParams.toString());
+    applyOrDelete(params, "type", v, "all");
+    replaceParams(params);
+  }
+  function selectExactDate(date: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    applyOrDelete(params, "y", date.slice(0, 4), defaultYear);
+    applyOrDelete(params, "m", String(Number(date.slice(5, 7))), defaultMonth);
+    applyOrDelete(params, "d", String(Number(date.slice(8, 10))), defaultDay);
+    replaceParams(params);
+  }
+  /** GameCalendar의 "전체" 버튼 — 연·월·일을 명시적으로 "전체"로. */
+  function resetDateFilter() {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("y", "all");
+    params.set("m", "all");
+    params.set("d", "all");
+    replaceParams(params);
+  }
+  /** 빈 상태의 "필터 초기화" — 날짜·종목 모두 가장 넓은 범위로. */
+  function resetAllFilters() {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("y", "all");
+    params.set("m", "all");
+    params.set("d", "all");
+    params.delete("type");
+    replaceParams(params);
+  }
+  /** 빈 상태의 "최근 게임일로 이동" — 기본값(= 가장 최근 게임일)으로 복귀. */
+  function jumpToMostRecentGameDay() {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("y");
+    params.delete("m");
+    params.delete("d");
+    params.delete("type");
+    replaceParams(params);
+  }
 
   const years = useMemo(() => {
     const set = new Set(games.map((g) => g.date.slice(0, 4)));
-    set.add(todayYear); // so today's year is always a valid, selected option even with no games yet
+    set.add(defaultYear);
     return Array.from(set).sort((a, b) => b.localeCompare(a));
-  }, [games, todayYear]);
+  }, [games, defaultYear]);
 
-  const [year, setYear] = useState(todayYear);
-  const [month, setMonth] = useState(todayMonth);
-  const [day, setDay] = useState(todayDay);
+  const dayCount =
+    year !== "all" && month !== "all" ? daysInMonth(Number(year), Number(month)) : 31;
+  const DAYS = useMemo(() => Array.from({ length: dayCount }, (_, i) => i + 1), [dayCount]);
+  const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 
-  // v2.19 — calendar picker: which business dates actually have a game (for
-  // highlighting) and the single exact date the three dropdowns above
-  // currently pin, if any. Soft-deleted games don't count as "there's a
-  // game here" for a non-admin, but admins see them in `games` too (see
-  // games/page.tsx) — matching activeFiltered's own active-only contract
-  // keeps the calendar's highlighting consistent with what "회" the summary
-  // line above actually counts.
-  const gameDates = useMemo(
-    () => new Set(games.filter(isActiveGame).map((g) => g.date)),
-    [games]
-  );
+  // v2.19 — 달력은 날짜 필터(연·월·일)를 타지 않고 종목 필터만 탄다: "찾고
+  // 있는 종목의 게임이 있는 날"을 보여주는 게 목적이므로, 이미 날짜로 좁혀
+  // 놓은 뒤에도 달력 전체를 계속 보여줘야 다른 날로 이동할 수 있다.
+  const gameCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const g of games.filter(isActiveGame)) {
+      if (gameTypeFilter !== "all" && g.gameType !== gameTypeFilter) continue;
+      counts.set(g.date, (counts.get(g.date) ?? 0) + 1);
+    }
+    return counts;
+  }, [games, gameTypeFilter]);
   const selectedDate: string | null =
     year !== "all" && month !== "all" && day !== "all"
       ? `${year}-${String(Number(month)).padStart(2, "0")}-${String(Number(day)).padStart(2, "0")}`
       : null;
-  function selectExactDate(date: string) {
-    setYear(date.slice(0, 4));
-    setMonth(String(Number(date.slice(5, 7))));
-    setDay(String(Number(date.slice(8, 10))));
-  }
 
   const [isPending, startTransition] = useTransition();
-  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<{ id: string; message: string } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmHardDeleteId, setConfirmHardDeleteId] = useState<string | null>(null);
   const [isHardDeleting, startHardDeleteTransition] = useTransition();
+  const undo = useUndoStack();
 
   const filtered = useMemo(() => {
     return games
@@ -108,6 +203,7 @@ export default function GamesListClient({
         if (year !== "all" && y !== year) return false;
         if (month !== "all" && String(Number(m)) !== month) return false;
         if (day !== "all" && String(Number(d)) !== day) return false;
+        if (gameTypeFilter !== "all" && g.gameType !== gameTypeFilter) return false;
         return true;
       })
       .sort((a, b) =>
@@ -115,7 +211,7 @@ export default function GamesListClient({
           ? withinDayKey(b).localeCompare(withinDayKey(a))
           : b.date.localeCompare(a.date)
       );
-  }, [games, year, month, day]);
+  }, [games, year, month, day, gameTypeFilter]);
 
   // `games` includes soft-deleted rows for admins (so they can be viewed and
   // reactivated), but balances/stats must never count them — same contract
@@ -129,19 +225,29 @@ export default function GamesListClient({
     [participants, activeFiltered]
   );
 
-  function handleDelete(id: string) {
-    setDeletingId(id);
+  function handleDelete(g: GameResult) {
     setDeleteError(null);
     startTransition(async () => {
       try {
-        await deleteGame(id);
+        await deleteGame(g.id);
+        // 관리자는 언제든 되돌릴 수 있으므로 토스트 자체는 지금부터 다시
+        // EDIT_WINDOW_MS — 비관리자는 서버 게이트(§15)와 정확히 같은
+        // 시점에 "되돌리기"가 사라지도록 원래 createdAt 기준으로 만료시킨다.
+        const expiresAt = isAdmin
+          ? Date.now() + EDIT_WINDOW_MS
+          : new Date(g.createdAt).getTime() + EDIT_WINDOW_MS;
+        undo.push({
+          id: g.id,
+          message: `삭제됨: ${nameMap.get(g.winnerId) ?? "(삭제됨)"} ← ${nameMap.get(g.loserId) ?? "(삭제됨)"} ${g.points ?? 1}점`,
+          expiresAt,
+          onUndo: () => restoreGame(g.id),
+        });
       } catch (e) {
         setDeleteError({
-          id,
+          id: g.id,
           message: e instanceof Error ? e.message : "삭제에 실패했습니다.",
         });
       }
-      setDeletingId(null);
     });
   }
 
@@ -152,8 +258,12 @@ export default function GamesListClient({
     });
   }
 
+  const bestScorer = pointTotals.length > 0 ? pointTotals[0] : null;
+
   return (
     <div className="space-y-4">
+      <UndoStack entries={undo.entries} onRemove={undo.remove} />
+
       <Card padding="sm">
         <div className="flex flex-wrap items-end gap-4">
           <div>
@@ -211,62 +321,111 @@ export default function GamesListClient({
             )}
           </div>
         </div>
+        <div className="flex gap-2 flex-wrap mt-3">
+          {GAME_TYPE_OPTIONS.map((opt) => (
+            <FilterChip
+              key={opt.value}
+              selected={gameTypeFilter === opt.value}
+              onClick={() => setGameTypeFilter(opt.value)}
+            >
+              {opt.label}
+            </FilterChip>
+          ))}
+        </div>
       </Card>
 
       <GameCalendar
-        gameDates={gameDates}
+        gameCounts={gameCounts}
         selectedDate={selectedDate}
         onSelectDate={selectExactDate}
+        onReset={resetDateFilter}
         today={today}
+        focusYear={year !== "all" ? Number(year) : null}
+        focusMonth={month !== "all" ? Number(month) : null}
       />
 
-      <Card padding="sm">
-        <SectionTitle>이 구간 인별 점수</SectionTitle>
-        {pointTotals.length === 0 ? (
-          <EmptyState title="이 구간에 집계할 게임이 없습니다." />
-        ) : (
-          <div className="overflow-x-auto mt-3">
-            <table className="w-full text-sm tabular-nums">
-              <thead>
-                <tr className="text-left text-content-muted text-xs">
-                  <th className="py-1.5 pr-4">순위</th>
-                  <th className="py-1.5 pr-4">이름</th>
-                  <th className="py-1.5 pr-4">딴 점수</th>
-                  <th className="py-1.5 pr-4">잃은 점수</th>
-                  <th className="py-1.5 pr-4">순점수</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pointTotals.map((p, i) => (
-                  <tr key={p.id} className="border-t border-line">
-                    <td className="py-1.5 pr-4 text-content-faint">{i + 1}</td>
-                    <td className="py-1.5 pr-4 font-medium text-content">{p.name}</td>
-                    <td className="py-1.5 pr-4 text-emerald-400">{p.pointsWon}</td>
-                    <td className="py-1.5 pr-4 text-lose">{p.pointsLost}</td>
-                    <td
-                      className={`py-1.5 pr-4 font-semibold ${
-                        p.netPoints > 0
-                          ? "text-emerald-400"
-                          : p.netPoints < 0
-                          ? "text-lose"
-                          : "text-content-muted"
-                      }`}
-                    >
-                      {p.netPoints > 0 ? "+" : ""}
-                      {p.netPoints}
-                    </td>
+      {activeFiltered.length > 0 && (
+        <Card padding="sm">
+          <details>
+            <summary className="cursor-pointer select-none list-none flex items-center justify-between gap-2 min-h-9">
+              <span className="text-sm text-content-sub">
+                이 구간 <span className="font-semibold text-content tabular-nums">{activeFiltered.length}게임</span>
+                {bestScorer && (
+                  <>
+                    {" "}
+                    · 최다 획득{" "}
+                    <span className="font-semibold text-content">{bestScorer.name}</span>{" "}
+                    <span className="text-emerald-400 tabular-nums">
+                      {bestScorer.netPoints > 0 ? "+" : ""}
+                      {bestScorer.netPoints}
+                    </span>
+                  </>
+                )}
+              </span>
+              <span className="text-xs text-content-muted shrink-0">인별 점수 보기</span>
+            </summary>
+            <div className="overflow-x-auto mt-3">
+              <table className="w-full text-sm tabular-nums">
+                <thead>
+                  <tr className="text-left text-content-muted text-xs">
+                    <th className="py-1.5 pr-4">순위</th>
+                    <th className="py-1.5 pr-4">이름</th>
+                    <th className="py-1.5 pr-4">딴 점수</th>
+                    <th className="py-1.5 pr-4">잃은 점수</th>
+                    <th className="py-1.5 pr-4">순점수</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+                </thead>
+                <tbody>
+                  {pointTotals.map((p, i) => (
+                    <tr key={p.id} className="border-t border-line">
+                      <td className="py-1.5 pr-4 text-content-faint">{i + 1}</td>
+                      <td className="py-1.5 pr-4 font-medium text-content">{p.name}</td>
+                      <td className="py-1.5 pr-4 text-emerald-400">{p.pointsWon}</td>
+                      <td className="py-1.5 pr-4 text-lose">{p.pointsLost}</td>
+                      <td
+                        className={`py-1.5 pr-4 font-semibold ${
+                          p.netPoints > 0
+                            ? "text-emerald-400"
+                            : p.netPoints < 0
+                            ? "text-lose"
+                            : "text-content-muted"
+                        }`}
+                      >
+                        {p.netPoints > 0 ? "+" : ""}
+                        {p.netPoints}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        </Card>
+      )}
 
       <div className="rounded-2xl border border-line bg-surface overflow-hidden">
         {filtered.length === 0 ? (
           <div className="p-5">
-            <EmptyState title="조건에 맞는 게임 기록이 없습니다." />
+            <EmptyState
+              title="조건에 맞는 게임 기록이 없습니다."
+              action={
+                <div className="flex gap-2 flex-wrap justify-center">
+                  <Button variant="neutral" size="sm" onClick={resetAllFilters}>
+                    필터 초기화
+                  </Button>
+                  {mostRecentGameDate && (
+                    <Button variant="neutral" size="sm" onClick={jumpToMostRecentGameDay}>
+                      최근 게임일로 이동
+                    </Button>
+                  )}
+                  <Link href="/games/new">
+                    <Button variant="primary" size="sm">
+                      + 새 게임 기록
+                    </Button>
+                  </Link>
+                </div>
+              }
+            />
           </div>
         ) : (
           <ul className="divide-y divide-line">
@@ -291,6 +450,7 @@ export default function GamesListClient({
               const editableByUser = isWithinEditWindow(g.createdAt);
               const canEdit = isAdmin || (!inactive && editableByUser);
               const canDelete = !inactive && (isAdmin || editableByUser);
+              const hasMenu = canEdit || canDelete || isAdmin;
               return (
                 <li
                   key={g.id}
@@ -310,72 +470,77 @@ export default function GamesListClient({
                         <GameNightBadge businessDate={wallClock.businessDate} />
                       )}
                       {inactive && <InactiveBadge />}
+                      {/* v2.19 (PRD §24.12) — 관리자는 시간 제한이 없으므로 칩을 띄우지 않는다. */}
+                      {!isAdmin && !inactive && canEdit && <EditWindowChip createdAt={g.createdAt} />}
                     </div>
-                    <div className="flex items-center gap-3">
-                      {isAdmin && confirmHardDeleteId === g.id ? (
-                        <span className="flex items-center gap-2 text-xs">
-                          <span className="text-red-300 font-medium">
-                            완전 삭제할까요? 되돌릴 수 없습니다.
-                          </span>
-                          <Button
-                            variant="danger"
-                            size="sm"
-                            onClick={() => handleHardDelete(g.id)}
-                            disabled={isHardDeleting}
-                            pending={isHardDeleting}
-                            pendingText="삭제 중..."
-                          >
-                            확인
-                          </Button>
-                          <Button
-                            variant="neutral"
-                            size="sm"
-                            onClick={() => setConfirmHardDeleteId(null)}
-                            disabled={isHardDeleting}
-                          >
-                            취소
-                          </Button>
+                    {isAdmin && confirmHardDeleteId === g.id ? (
+                      <span className="flex items-center gap-2 text-xs">
+                        <span className="text-red-300 font-medium">
+                          완전 삭제할까요? 되돌릴 수 없습니다.
                         </span>
-                      ) : (
-                        <>
-                          {canEdit && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setEditingId(isEditing ? null : g.id)}
-                            >
-                              {isEditing ? "닫기" : "수정"}
-                            </Button>
+                        <Button
+                          variant="danger"
+                          onClick={() => handleHardDelete(g.id)}
+                          disabled={isHardDeleting}
+                          pending={isHardDeleting}
+                          pendingText="삭제 중..."
+                        >
+                          확인
+                        </Button>
+                        <Button
+                          variant="neutral"
+                          onClick={() => setConfirmHardDeleteId(null)}
+                          disabled={isHardDeleting}
+                        >
+                          취소
+                        </Button>
+                      </span>
+                    ) : (
+                      hasMenu && (
+                        <OverflowMenu label="게임 기록 더 보기">
+                          {(close) => (
+                            <>
+                              {canEdit && (
+                                <OverflowMenuItem
+                                  onClick={() => {
+                                    setEditingId(isEditing ? null : g.id);
+                                    close();
+                                  }}
+                                >
+                                  <Pencil className="w-4 h-4 mr-2 shrink-0" aria-hidden />
+                                  {isEditing ? "수정 닫기" : "수정"}
+                                </OverflowMenuItem>
+                              )}
+                              {canDelete && (
+                                <OverflowMenuItem
+                                  danger
+                                  disabled={isPending}
+                                  onClick={() => {
+                                    handleDelete(g);
+                                    close();
+                                  }}
+                                >
+                                  <Trash2 className="w-4 h-4 mr-2 shrink-0" aria-hidden />
+                                  삭제
+                                </OverflowMenuItem>
+                              )}
+                              {isAdmin && (
+                                <OverflowMenuItem
+                                  danger
+                                  onClick={() => {
+                                    setConfirmHardDeleteId(g.id);
+                                    close();
+                                  }}
+                                >
+                                  <Trash2 className="w-4 h-4 mr-2 shrink-0" aria-hidden />
+                                  완전삭제
+                                </OverflowMenuItem>
+                              )}
+                            </>
                           )}
-                          {canDelete && (
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              onClick={() => handleDelete(g.id)}
-                              disabled={isPending && deletingId === g.id}
-                              pending={isPending && deletingId === g.id}
-                              pendingText="삭제 중..."
-                            >
-                              삭제
-                            </Button>
-                          )}
-                          {isAdmin && (
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              onClick={() => setConfirmHardDeleteId(g.id)}
-                            >
-                              완전삭제
-                            </Button>
-                          )}
-                          {!canEdit && !canDelete && (
-                            <span className="text-xs text-content-muted">
-                              기록 후 2시간이 지나 수정·삭제할 수 없습니다.
-                            </span>
-                          )}
-                        </>
-                      )}
-                    </div>
+                        </OverflowMenu>
+                      )
+                    )}
                   </div>
                   {deleteError?.id === g.id && (
                     <p className="text-xs text-red-400">{deleteError.message}</p>
@@ -613,11 +778,11 @@ function GameEditForm({
             type="button"
             onClick={handleSave}
             disabled={isSaving}
-            className="min-h-9 rounded-lg bg-emerald-600 text-white text-sm font-medium px-4 transition active:scale-[0.97] hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:opacity-50 disabled:pointer-events-none"
+            className="min-h-11 rounded-lg bg-emerald-600 text-white text-sm font-medium px-4 transition active:scale-[0.97] hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:opacity-50 disabled:pointer-events-none"
           >
             {isSaving ? "저장 중..." : "이대로 저장"}
           </button>
-          <Button variant="neutral" size="sm" onClick={() => setStep("form")} disabled={isSaving}>
+          <Button variant="neutral" onClick={() => setStep("form")} disabled={isSaving}>
             돌아가기
           </Button>
         </div>
@@ -729,7 +894,7 @@ function GameEditForm({
             <button
               type="button"
               onClick={() => setPoints((p) => Math.max(1, p - 1))}
-              className="w-8 h-8 rounded-lg border border-slate-700 bg-surface text-content-sub hover:bg-slate-700 flex items-center justify-center transition active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+              className="w-11 h-11 rounded-lg border border-slate-700 bg-surface text-content-sub hover:bg-slate-700 flex items-center justify-center transition active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
               aria-label="점수 감소"
             >
               −
@@ -742,12 +907,12 @@ function GameEditForm({
               onChange={(e) =>
                 setPoints(Math.max(1, Math.round(Number(e.target.value) || 1)))
               }
-              className="w-14 rounded-lg border border-slate-700 bg-surface px-2 py-1.5 text-sm text-center text-content tabular-nums"
+              className="w-14 h-11 rounded-lg border border-slate-700 bg-surface px-2 text-sm text-center text-content tabular-nums"
             />
             <button
               type="button"
               onClick={() => setPoints((p) => p + 1)}
-              className="w-8 h-8 rounded-lg border border-slate-700 bg-surface text-content-sub hover:bg-slate-700 flex items-center justify-center transition active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+              className="w-11 h-11 rounded-lg border border-slate-700 bg-surface text-content-sub hover:bg-slate-700 flex items-center justify-center transition active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
               aria-label="점수 증가"
             >
               +

@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/Card";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SubmitButton } from "@/components/ui/SubmitButton";
+import { FocusLink } from "@/components/ui/FocusLink";
 
 export const dynamic = "force-dynamic";
 
@@ -16,9 +17,9 @@ export default async function ParticipantsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 text-amber-300 text-xs font-medium px-2.5 py-1 mb-2">
-          관리자 모드
-        </div>
+        {/* v2.19 (배치 B, PRD §24.11) — 헤더 내비게이션에 이미 "관리자 모드"
+            칩이 떠 있다(관리자 전용 화면이므로 항상 그렇다). 여기서 또
+            찍으면 같은 정보가 화면에 두 번 나온다. */}
         <h1 className="text-2xl font-bold text-content">참가자 풀</h1>
         <p className="text-sm text-content-muted mt-1">
           게임에 참여할 수 있는 전체 인원을 관리합니다. 비활성화된 참가자는 새 게임
@@ -36,6 +37,7 @@ export default async function ParticipantsPage() {
           className="flex gap-2 mt-3"
         >
           <input
+            id="add-participant-name"
             type="text"
             name="name"
             placeholder="이름"
@@ -55,7 +57,10 @@ export default async function ParticipantsPage() {
         </ul>
         {active.length === 0 && (
           <div className="pt-3">
-            <EmptyState title="참가자가 없습니다." />
+            <EmptyState
+              title="참가자가 없습니다."
+              action={<FocusLink targetId="add-participant-name">+ 참가자 추가</FocusLink>}
+            />
           </div>
         )}
       </Card>
@@ -103,14 +108,13 @@ function ParticipantRow({
           defaultValue={name}
           className="bg-surface flex-1 rounded-lg border border-slate-700 px-2.5 py-1.5 text-sm text-content-sub focus:outline-none focus:ring-2 focus:ring-accent-soft"
         />
-        <SubmitButton variant="ghost" size="sm" pendingText="저장 중...">
+        <SubmitButton variant="ghost" pendingText="저장 중...">
           저장
         </SubmitButton>
       </form>
       <form action={toggleAction}>
         <SubmitButton
           variant={active ? "danger" : "neutral"}
-          size="sm"
           pendingText={active ? "비활성화 중..." : "활성화 중..."}
         >
           {active ? "비활성화" : "다시 활성화"}

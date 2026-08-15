@@ -3,10 +3,13 @@
 // display/group split (PRD §22). Run with: npm run verify:business-day
 import {
   BUSINESS_DAY_START_HOUR,
+  EDIT_WINDOW_MS,
   addDaysToIsoDate,
   businessDateFromWallClock,
   calendarDateFromBusinessDay,
+  editWindowRemainingMs,
   gameWallClock,
+  isWithinEditWindow,
   minutesSinceBusinessDayStart,
   seoulLocalToUtcIso,
 } from "../src/lib/time";
@@ -265,5 +268,35 @@ assert(
     businessDateFromWallClock(lateNightWallClock.date, "01:00") === "2026-08-14",
   "case14b: both must still fold back to the same business date 2026-08-14"
 );
+
+// 7) v2.19 (배치 B, PRD §24.12) — editWindowRemainingMs: the live-countdown
+// chip's data source. A row created "just now" should read back
+// approximately the full window (allow a small tolerance for the ms elapsed
+// between building createdAt and calling the function); one created
+// EDIT_WINDOW_MS + 1 minute ago must already be negative; and the two
+// helpers must never disagree about whether a row is still editable.
+const justNow = new Date().toISOString();
+const remainingForJustNow = editWindowRemainingMs(justNow);
+assert(
+  Math.abs(remainingForJustNow - EDIT_WINDOW_MS) < 5000,
+  `case15a: a row created just now should have ~EDIT_WINDOW_MS remaining, got ${remainingForJustNow}`
+);
+const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+assert(
+  editWindowRemainingMs(threeHoursAgo) < 0,
+  `case15b: a row created 3 hours ago should have negative remaining time, got ${editWindowRemainingMs(threeHoursAgo)}`
+);
+for (const createdAt of [
+  justNow,
+  threeHoursAgo,
+  new Date(Date.now() - EDIT_WINDOW_MS / 2).toISOString(), // halfway through
+]) {
+  assert(
+    isWithinEditWindow(createdAt) === editWindowRemainingMs(createdAt) > 0,
+    `case15c: isWithinEditWindow and editWindowRemainingMs must agree for createdAt=${createdAt}, got isWithinEditWindow=${isWithinEditWindow(
+      createdAt
+    )} remaining=${editWindowRemainingMs(createdAt)}`
+  );
+}
 
 console.log("Done.");

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type CSSProperties } from "react";
+import { useMemo, type CSSProperties } from "react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -32,6 +32,8 @@ import { Card } from "@/components/ui/Card";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { FilterChip } from "@/components/ui/FilterChip";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Button } from "@/components/ui/Button";
+import { useQueryParams } from "@/components/ui/useQueryParams";
 
 interface ParticipantLite {
   id: string;
@@ -60,6 +62,9 @@ const GAME_TYPE_OPTIONS: { value: GameTypeFilter; label: string }[] = [
   { value: "all", label: "전체" },
   ...GAME_TYPES.map((gt) => ({ value: gt, label: GAME_TYPE_LABELS[gt] })),
 ];
+
+const DEFAULT_RANGE: RangePreset = "30d";
+const DEFAULT_GROUPING: PeriodGrouping = "week";
 
 // Data-driven color intensity can't be expressed as static Tailwind classes
 // (the scanner needs literal class strings), so the head-to-head matrix uses
@@ -104,30 +109,7 @@ const CHART_TOOLTIP_PROPS = {
 };
 const CHART_LEGEND_PROPS = { wrapperStyle: { color: "#cbd5e1" } };
 
-/** Small per-section 종목 filter — v2.16: each stats section gets its own, independent of the others, rather than one filter driving the whole page. */
-function GameTypeFilterButtons({
-  value,
-  onChange,
-}: {
-  value: GameTypeFilter;
-  onChange: (v: GameTypeFilter) => void;
-}) {
-  return (
-    <div className="flex gap-2 flex-wrap">
-      {GAME_TYPE_OPTIONS.map((opt) => (
-        <FilterChip
-          key={opt.value}
-          selected={value === opt.value}
-          onClick={() => onChange(opt.value)}
-        >
-          {opt.label}
-        </FilterChip>
-      ))}
-    </div>
-  );
-}
-
-/** Small per-section 추이 단위 filter — only used by the two trend sections (v2.16 removed it from the common filter bar). */
+/** Shared 추이 단위 filter — used independently by the two trend sections (each keeps its own URL param, see StatsClient's cbucket/gbucket). */
 function GroupingFilterButtons({
   value,
   onChange,
@@ -153,17 +135,35 @@ function GroupingFilterButtons({
 export default function StatsClient({
   participants,
   games,
-  initialH2hParticipantId = null,
 }: {
   participants: ParticipantLite[];
   games: GameResult[];
-  initialH2hParticipantId?: string | null;
 }) {
-  // v2.16: only 기간 is a page-wide filter now. 종목은 섹션마다 따로 걸고,
-  // 추이 단위는 실제로 그걸 쓰는 두 추이 섹션에만 있다.
-  const [range, setRange] = useState<RangePreset>("30d");
-  const [customStart, setCustomStart] = useState("");
-  const [customEnd, setCustomEnd] = useState("");
+  // v2.19 (배치 B, PRD §24.12) — 9개 필터(기간 1 + 종목 6 + 추이단위 2)를
+  // URL 검색 파라미터로 동기화한다. 종목 필터는 섹션마다 따로 있던 6개를
+  // 페이지 레벨 1개로 합쳤다 — "훌라만 보기"에 같은 컨트롤을 6번 누를
+  // 필요가 없어진다.
+  const { searchParams, set } = useQueryParams();
+  const range = (searchParams.get("range") as RangePreset | null) ?? DEFAULT_RANGE;
+  const customStart = searchParams.get("from") ?? "";
+  const customEnd = searchParams.get("to") ?? "";
+  const gameType = (searchParams.get("type") as GameTypeFilter | null) ?? "all";
+  const cumulativeGrouping =
+    (searchParams.get("cbucket") as PeriodGrouping | null) ?? DEFAULT_GROUPING;
+  const trendGrouping = (searchParams.get("gbucket") as PeriodGrouping | null) ?? DEFAULT_GROUPING;
+  const h2hParticipantId = searchParams.get("h2h");
+
+  const setRange = (v: RangePreset) => set({ range: v === DEFAULT_RANGE ? null : v });
+  const setCustomStart = (v: string) => set({ from: v || null });
+  const setCustomEnd = (v: string) => set({ to: v || null });
+  const setGameType = (v: GameTypeFilter) => set({ type: v === "all" ? null : v });
+  const setCumulativeGrouping = (v: PeriodGrouping) =>
+    set({ cbucket: v === DEFAULT_GROUPING ? null : v });
+  const setTrendGrouping = (v: PeriodGrouping) =>
+    set({ gbucket: v === DEFAULT_GROUPING ? null : v });
+  const setH2h = (id: string | null) => set({ h2h: id });
+  /** 빈 상태의 "필터 초기화" — 기간이 좁아 결과가 없는 경우가 대부분이라 종목·기간 모두 넓힌다. */
+  const resetFilters = () => set({ range: null, from: null, to: null, type: null });
 
   // Only consulted when range === "custom"; harmless to always pass.
   const customRange = useMemo(
@@ -175,38 +175,31 @@ export default function StatsClient({
     () => filterByDatePreset(activeGames(games), range, customRange),
     [games, range, customRange]
   );
+  // v2.19 — 종목 필터가 이제 페이지 레벨 1개이므로 모든 섹션이 같은
+  // 필터링된 게임 목록을 공유한다(예전엔 섹션마다 독립적으로 필터링했다).
+  const filteredGames = useMemo(
+    () => filterGamesByType(periodGames, gameType),
+    [periodGames, gameType]
+  );
 
   // ---------- 1. 순위표 (+ 클릭 시 나오는 상대 전적) ----------
-  const [leaderboardGameType, setLeaderboardGameType] = useState<GameTypeFilter>("all");
-  const [h2hParticipantId, setH2hParticipantId] = useState<string | null>(
-    initialH2hParticipantId
-  );
-  const leaderboardGames = useMemo(
-    () => filterGamesByType(periodGames, leaderboardGameType),
-    [periodGames, leaderboardGameType]
-  );
   const stats = useMemo(
-    () => computeParticipantStats(participants, leaderboardGames),
-    [participants, leaderboardGames]
+    () => computeParticipantStats(participants, filteredGames),
+    [participants, filteredGames]
   );
   const activeStats = stats.filter((s) => s.appearances > 0);
 
   // ---------- 3. 상대 전적 매트릭스 ----------
-  const [matrixGameType, setMatrixGameType] = useState<GameTypeFilter>("all");
-  const matrixGames = useMemo(
-    () => filterGamesByType(periodGames, matrixGameType),
-    [periodGames, matrixGameType]
-  );
   const matrixParticipants = useMemo(
     () =>
-      computeParticipantStats(participants, matrixGames)
+      computeParticipantStats(participants, filteredGames)
         .filter((s) => s.appearances > 0)
         .map((s) => ({ id: s.id, name: s.name })),
-    [participants, matrixGames]
+    [participants, filteredGames]
   );
   const matrix = useMemo(
-    () => computeHeadToHeadMatrix(matrixParticipants, matrixGames),
-    [matrixParticipants, matrixGames]
+    () => computeHeadToHeadMatrix(matrixParticipants, filteredGames),
+    [matrixParticipants, filteredGames]
   );
   const matrixMaxAbs = useMemo(
     () => matrix.reduce((max, c) => Math.max(max, Math.abs(c.netPoints)), 0),
@@ -214,46 +207,30 @@ export default function StatsClient({
   );
 
   // ---------- 4. 천적 / 밥 ----------
-  const [nemesisGameType, setNemesisGameType] = useState<GameTypeFilter>("all");
-  const nemesisGames = useMemo(
-    () => filterGamesByType(periodGames, nemesisGameType),
-    [periodGames, nemesisGameType]
-  );
   const nemesisVictim = useMemo(() => {
     const activeIds = new Set(
-      computeParticipantStats(participants, nemesisGames)
+      computeParticipantStats(participants, filteredGames)
         .filter((s) => s.appearances > 0)
         .map((s) => s.id)
     );
-    return computeNemesisAndVictim(participants, nemesisGames).filter((nv) =>
+    return computeNemesisAndVictim(participants, filteredGames).filter((nv) =>
       activeIds.has(nv.id)
     );
-  }, [participants, nemesisGames]);
+  }, [participants, filteredGames]);
 
   // ---------- 5. 참가자별 승 / 패 ----------
-  const [winLossGameType, setWinLossGameType] = useState<GameTypeFilter>("all");
-  const winLossGames = useMemo(
-    () => filterGamesByType(periodGames, winLossGameType),
-    [periodGames, winLossGameType]
-  );
   const winLossData = useMemo(
     () =>
-      computeParticipantStats(participants, winLossGames)
+      computeParticipantStats(participants, filteredGames)
         .filter((s) => s.appearances > 0)
         .map((s) => ({ name: s.name, 승: s.wins, 패: s.losses })),
-    [participants, winLossGames]
+    [participants, filteredGames]
   );
 
   // ---------- 6. 참가자별 누적 순점수 추이 ----------
-  const [cumulativeGameType, setCumulativeGameType] = useState<GameTypeFilter>("all");
-  const [cumulativeGrouping, setCumulativeGrouping] = useState<PeriodGrouping>("week");
-  const cumulativeGames = useMemo(
-    () => filterGamesByType(periodGames, cumulativeGameType),
-    [periodGames, cumulativeGameType]
-  );
   const cumulativeRows = useMemo(
-    () => computeCumulativeNetPointsTrend(cumulativeGames, cumulativeGrouping),
-    [cumulativeGames, cumulativeGrouping]
+    () => computeCumulativeNetPointsTrend(filteredGames, cumulativeGrouping),
+    [filteredGames, cumulativeGrouping]
   );
   const cumulativeData = useMemo(() => {
     const nameOf = new Map(participants.map((p) => [p.id, p.name]));
@@ -276,15 +253,9 @@ export default function StatsClient({
   }, [cumulativeData]);
 
   // ---------- 7. 기간별 게임 수 추이 ----------
-  const [trendGameType, setTrendGameType] = useState<GameTypeFilter>("all");
-  const [trendGrouping, setTrendGrouping] = useState<PeriodGrouping>("week");
-  const trendGames = useMemo(
-    () => filterGamesByType(periodGames, trendGameType),
-    [periodGames, trendGameType]
-  );
   const buckets = useMemo(
-    () => groupGamesByPeriod(trendGames, trendGrouping),
-    [trendGames, trendGrouping]
+    () => groupGamesByPeriod(filteredGames, trendGrouping),
+    [filteredGames, trendGrouping]
   );
   const trendData = buckets.map((b) => ({ label: b.label, 게임수: b.gameCount }));
 
@@ -323,16 +294,35 @@ export default function StatsClient({
               </div>
             )}
           </div>
+          <div>
+            <span className="text-xs text-content-muted block mb-1">종목</span>
+            <div className="flex gap-2 flex-wrap">
+              {GAME_TYPE_OPTIONS.map((opt) => (
+                <FilterChip
+                  key={opt.value}
+                  selected={gameType === opt.value}
+                  onClick={() => setGameType(opt.value)}
+                >
+                  {opt.label}
+                </FilterChip>
+              ))}
+            </div>
+          </div>
         </div>
       </Card>
 
       <Card>
-        <SectionTitle action={<GameTypeFilterButtons value={leaderboardGameType} onChange={setLeaderboardGameType} />}>
-          순위표 ({leaderboardGames.length}게임 기준)
-        </SectionTitle>
+        <SectionTitle>순위표 ({filteredGames.length}게임 기준)</SectionTitle>
         <div className="h-3" />
         {activeStats.length === 0 ? (
-          <EmptyState title="해당 조건에 게임 기록이 없습니다." />
+          <EmptyState
+            title="해당 조건에 게임 기록이 없습니다."
+            action={
+              <Button variant="neutral" size="sm" onClick={resetFilters}>
+                필터 초기화
+              </Button>
+            }
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm tabular-nums">
@@ -388,9 +378,7 @@ export default function StatsClient({
                       <td className="py-2 pr-4">
                         <FilterChip
                           selected={h2hParticipantId === s.id}
-                          onClick={() =>
-                            setH2hParticipantId((cur) => (cur === s.id ? null : s.id))
-                          }
+                          onClick={() => setH2h(h2hParticipantId === s.id ? null : s.id)}
                           className="whitespace-nowrap"
                         >
                           상대 전적
@@ -407,21 +395,25 @@ export default function StatsClient({
       {h2hParticipantId && (
         <HeadToHeadPanel
           participants={participants}
-          games={leaderboardGames}
+          games={filteredGames}
           participantId={h2hParticipantId}
         />
       )}
 
       <Card>
-        <SectionTitle
-          description="행 참가자가 열 참가자를 상대로 딴 순점수입니다. 초록은 우세, 빨강은 열세이며 색이 진할수록 격차가 큽니다."
-          action={<GameTypeFilterButtons value={matrixGameType} onChange={setMatrixGameType} />}
-        >
+        <SectionTitle description="행 참가자가 열 참가자를 상대로 딴 순점수입니다. 초록은 우세, 빨강은 열세이며 색이 진할수록 격차가 큽니다.">
           상대 전적 매트릭스
         </SectionTitle>
         {matrixParticipants.length < 2 ? (
           <div className="mt-4">
-            <EmptyState title="비교할 참가자가 2명 이상일 때 표시됩니다." />
+            <EmptyState
+              title="비교할 참가자가 2명 이상일 때 표시됩니다."
+              action={
+                <Button variant="neutral" size="sm" onClick={resetFilters}>
+                  필터 초기화
+                </Button>
+              }
+            />
           </div>
         ) : (
           <div className="overflow-x-auto mt-4">
@@ -479,12 +471,17 @@ export default function StatsClient({
       </Card>
 
       <Card>
-        <SectionTitle action={<GameTypeFilterButtons value={nemesisGameType} onChange={setNemesisGameType} />}>
-          천적 / 밥
-        </SectionTitle>
+        <SectionTitle>천적 / 밥</SectionTitle>
         {nemesisVictim.filter((nv) => nv.nemesis || nv.victim).length === 0 ? (
           <div className="mt-4">
-            <EmptyState title="아직 상대 전적을 계산할 만한 데이터가 없습니다." />
+            <EmptyState
+              title="아직 상대 전적을 계산할 만한 데이터가 없습니다."
+              action={
+                <Button variant="neutral" size="sm" onClick={resetFilters}>
+                  필터 초기화
+                </Button>
+              }
+            />
           </div>
         ) : (
           <div className="overflow-x-auto mt-4">
@@ -521,12 +518,17 @@ export default function StatsClient({
       </Card>
 
       <Card>
-        <SectionTitle action={<GameTypeFilterButtons value={winLossGameType} onChange={setWinLossGameType} />}>
-          참가자별 승 / 패
-        </SectionTitle>
+        <SectionTitle>참가자별 승 / 패</SectionTitle>
         {winLossData.length === 0 ? (
           <div className="mt-4">
-            <EmptyState title="데이터가 없습니다." />
+            <EmptyState
+              title="데이터가 없습니다."
+              action={
+                <Button variant="neutral" size="sm" onClick={resetFilters}>
+                  필터 초기화
+                </Button>
+              }
+            />
           </div>
         ) : (
           <div style={{ width: "100%", height: 280 }} className="mt-4">
@@ -547,18 +549,20 @@ export default function StatsClient({
 
       <Card>
         <SectionTitle
-          action={
-            <div className="flex flex-wrap gap-3">
-              <GroupingFilterButtons value={cumulativeGrouping} onChange={setCumulativeGrouping} />
-              <GameTypeFilterButtons value={cumulativeGameType} onChange={setCumulativeGameType} />
-            </div>
-          }
+          action={<GroupingFilterButtons value={cumulativeGrouping} onChange={setCumulativeGrouping} />}
         >
           참가자별 누적 순점수 추이
         </SectionTitle>
         {cumulativeData.length === 0 ? (
           <div className="mt-4">
-            <EmptyState title="데이터가 없습니다." />
+            <EmptyState
+              title="데이터가 없습니다."
+              action={
+                <Button variant="neutral" size="sm" onClick={resetFilters}>
+                  필터 초기화
+                </Button>
+              }
+            />
           </div>
         ) : (
           <div style={{ width: "100%", height: 320 }} className="mt-4">
@@ -591,18 +595,20 @@ export default function StatsClient({
 
       <Card>
         <SectionTitle
-          action={
-            <div className="flex flex-wrap gap-3">
-              <GroupingFilterButtons value={trendGrouping} onChange={setTrendGrouping} />
-              <GameTypeFilterButtons value={trendGameType} onChange={setTrendGameType} />
-            </div>
-          }
+          action={<GroupingFilterButtons value={trendGrouping} onChange={setTrendGrouping} />}
         >
           기간별 게임 수 추이
         </SectionTitle>
         {trendData.length === 0 ? (
           <div className="mt-4">
-            <EmptyState title="데이터가 없습니다." />
+            <EmptyState
+              title="데이터가 없습니다."
+              action={
+                <Button variant="neutral" size="sm" onClick={resetFilters}>
+                  필터 초기화
+                </Button>
+              }
+            />
           </div>
         ) : (
           <div style={{ width: "100%", height: 240 }} className="mt-4">

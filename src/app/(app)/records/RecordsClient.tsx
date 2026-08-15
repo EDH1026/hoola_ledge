@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   ResponsiveContainer,
   ScatterChart,
@@ -19,6 +19,8 @@ import { Card } from "@/components/ui/Card";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { FilterChip } from "@/components/ui/FilterChip";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Button } from "@/components/ui/Button";
+import { useQueryParams } from "@/components/ui/useQueryParams";
 import { currentQuarterKey, formatQuarterKey } from "@/lib/time";
 import {
   computeQuarterlyTiers,
@@ -98,9 +100,15 @@ export default function RecordsClient({
   participants: ParticipantLite[];
   games: GameResult[];
 }) {
-  const [tierGameType, setTierGameType] = useState<GameTypeFilter>("all");
-  const [tierQuarter, setTierQuarter] = useState<string | null>(null);
-  const [styleMapGameType, setStyleMapGameType] = useState<GameTypeFilter>("all");
+  // v2.19 (배치 B, PRD §24.12) — 필터를 URL로 동기화한다. 티어와 성향 맵의
+  // 종목 탭은 의도적으로 독립 유지한다(둘이 서로 다른 종목을 보고 싶을
+  // 이유가 있다 — 예: 훌라 티어를 보면서 전체 성향은 그대로 보기) — 그래서
+  // PRD가 제안한 단일 `type` 대신 `type`(티어)/`styleType`(성향 맵) 두
+  // 파라미터를 쓴다.
+  const { searchParams, set } = useQueryParams();
+  const tierGameType = (searchParams.get("type") as GameTypeFilter | null) ?? "all";
+  const tierQuarterParam = searchParams.get("q");
+  const styleMapGameType = (searchParams.get("styleType") as GameTypeFilter | null) ?? "all";
 
   // 분기 티어는 항상 원본 games 전체를 넘긴다 — 종목 탭 4개를 한 번에
   // 계산해두고 탭 전환은 계산된 맵에서 골라 쓰기만 한다.
@@ -118,10 +126,26 @@ export default function RecordsClient({
     .sort()
     .reverse(); // most recent first
   const effectiveTierQuarter: string | null =
-    (tierQuarter && tierQuartersForType.has(tierQuarter) ? tierQuarter : null) ??
+    (tierQuarterParam && tierQuartersForType.has(tierQuarterParam) ? tierQuarterParam : null) ??
     (tierQuartersForType.has(currentQuarterKey()) ? currentQuarterKey() : null) ??
     availableTierQuarters[0] ??
     null;
+
+  // v2.19 — 종목 탭을 바꿨을 때 저장된 분기가 새 종목엔 없으면 URL에서
+  // 지운다. 예전엔 상태(tierQuarter)는 그대로 남아 있는데 <select> 표시값만
+  // effectiveTierQuarter의 폴백으로 조용히 바뀌어, 상태와 화면이 서로
+  // 다른 분기를 가리키는 채로 어긋났다 — q를 함께 지우면 둘이 항상 같다.
+  function setTierGameType(v: GameTypeFilter) {
+    const nextQuarters = tiersByGameType.get(v) ?? new Map();
+    const patch: Record<string, string | null> = { type: v === "all" ? null : v };
+    if (tierQuarterParam && !nextQuarters.has(tierQuarterParam)) {
+      patch.q = null;
+    }
+    set(patch);
+  }
+  const setTierQuarter = (v: string) => set({ q: v });
+  const setStyleMapGameType = (v: GameTypeFilter) =>
+    set({ styleType: v === "all" ? null : v });
 
   const tierRows = effectiveTierQuarter
     ? tierQuartersForType.get(effectiveTierQuarter) ?? []
@@ -191,7 +215,16 @@ export default function RecordsClient({
         </div>
 
         {!effectiveTierQuarter || visibleTierRows.length === 0 ? (
-          <EmptyState title="이 종목으로는 아직 분기 티어를 계산할 만한 기록이 없습니다." />
+          <EmptyState
+            title="이 종목으로는 아직 분기 티어를 계산할 만한 기록이 없습니다."
+            action={
+              tierGameType !== "all" && (
+                <Button variant="neutral" size="sm" onClick={() => setTierGameType("all")}>
+                  통합 종목으로 보기
+                </Button>
+              )
+            }
+          />
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {visibleTierRows.map((row) => (
@@ -225,7 +258,16 @@ export default function RecordsClient({
         </div>
 
         {styleMapPoints.length === 0 ? (
-          <EmptyState title="이 종목으로는 최근 90일 내 기록이 없습니다." />
+          <EmptyState
+            title="이 종목으로는 최근 90일 내 기록이 없습니다."
+            action={
+              styleMapGameType !== "all" && (
+                <Button variant="neutral" size="sm" onClick={() => setStyleMapGameType("all")}>
+                  통합 종목으로 보기
+                </Button>
+              )
+            }
+          />
         ) : (
           <StyleMapChart points={styleMapPoints} />
         )}

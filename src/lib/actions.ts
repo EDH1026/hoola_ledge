@@ -8,6 +8,7 @@ import {
   getMostRecentActiveAttendeeIds,
   insertGame,
   softDeleteGame,
+  restoreGame as restoreGameRow,
   deleteGameRow,
   updateGameRow,
   getGameById,
@@ -102,7 +103,7 @@ export async function createGame(input: {
   loserId: string;
   points?: number;
   note?: string;
-}) {
+}): Promise<{ id: string; createdAt: string }> {
   const points = validateGameInput(input);
 
   // Date/time are never taken from the client — the server's own clock at
@@ -112,7 +113,7 @@ export async function createGame(input: {
   // runs past real midnight still gets grouped with the night it started.
   const { date, time } = nowInSeoulBusinessDay();
 
-  await insertGame({
+  const game = await insertGame({
     date,
     time,
     gameType: input.gameType,
@@ -128,6 +129,11 @@ export async function createGame(input: {
   revalidatePath("/settlements");
   revalidatePath("/stats");
   revalidatePath("/");
+
+  // Returned so the client can offer an immediate "N판 기록됨 · 되돌리기"
+  // affordance (PRD §24.9/§24.11) without a separate lookup — same shape as
+  // recordSettlement's existing return value.
+  return { id: game.id, createdAt: game.createdAt };
 }
 
 /**
@@ -237,6 +243,32 @@ export async function deleteGame(id: string) {
   }
 
   await softDeleteGame(id);
+
+  revalidatePath("/games");
+  revalidatePath("/settlements");
+  revalidatePath("/stats");
+  revalidatePath("/");
+}
+
+/**
+ * v2.19 (배치 B, PRD §24.11): undoes deleteGame — the "되돌리기" half of the
+ * soft-delete snackbar. Same permission shape as deleteGame itself (open to
+ * non-admins within the row's own edit window; admins unrestricted), rather
+ * than routing through updateGame, which explicitly refuses to touch a row
+ * that's already `active === false` for non-admins — that guard exists to
+ * keep non-admins out of admin-only reactivation, but this action *is* that
+ * reactivation, scoped to "undo the delete I just made".
+ */
+export async function restoreGame(id: string) {
+  if (!(await isAdminSession())) {
+    const existing = await getGameById(id);
+    if (!existing) throw new Error("게임 기록을 찾을 수 없습니다.");
+    if (!isWithinEditWindow(existing.createdAt)) {
+      throw new Error("기록 후 2시간이 지나 더 이상 되돌릴 수 없습니다.");
+    }
+  }
+
+  await restoreGameRow(id);
 
   revalidatePath("/games");
   revalidatePath("/settlements");

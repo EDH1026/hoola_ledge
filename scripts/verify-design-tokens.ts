@@ -161,6 +161,62 @@ for (const file of nonUiFiles) {
 }
 report("6. [warn] possible Card-bypass (rounded-xl/p-5 + border/bg outside ui/)", cardBypassHits);
 
+// ---- 7. interactive <button> without a 44px (or 36px dense-chip) hit target (warn only) ----
+// PRD §24.11: primary/destructive/row actions/steppers/calendar cells need
+// min-h-11 (44px); dense filter chips are an explicit exception at min-h-9
+// (36px) — both count as "has a considered hit target" here. Heuristic only:
+// a button styled entirely via a template-literal ternary (chipClassName()
+// helpers etc.) won't have its className visible on the tag itself, so this
+// under-reports rather than over-reports.
+const smallButtonHits: Hit[] = [];
+for (const file of nonUiFiles) {
+  const content = readFileSync(file, "utf8");
+  const tagRe = /<button\b[\s\S]*?(?<!=)>/g;
+  let m: RegExpExecArray | null;
+  while ((m = tagRe.exec(content))) {
+    const tag = m[0];
+    const classMatch = tag.match(/className=(?:"([^"]*)"|'([^']*)'|\{`([^`]*)`\}|\{([^}]*)\})/);
+    const cls = classMatch
+      ? classMatch[1] ?? classMatch[2] ?? classMatch[3] ?? classMatch[4] ?? ""
+      : "";
+    const isInteractive = /onClick=|type=["']submit["']/.test(tag);
+    const hasHitTarget = /\b(?:min-h-(?:11|12)|h-11|h-12|w-11|w-12)\b/.test(cls);
+    if (isInteractive && cls && !hasHitTarget) {
+      smallButtonHits.push({
+        file: path.relative(process.cwd(), file),
+        line: lineNumberAt(content, m.index),
+        text: tag.replace(/\s+/g, " "),
+      });
+    }
+  }
+}
+report(
+  "7. [warn] interactive <button> without a min-h-11/min-h-9 hit target",
+  smallButtonHits
+);
+
+// ---- 8. title= on an interactive element (warn only) ----
+// PRD §24.10/§24.12: a title tooltip is unreachable by touch, so interactive
+// elements should surface the same info via visible text or aria-label
+// instead.
+const titleHits: Hit[] = [];
+for (const file of nonUiFiles) {
+  const content = readFileSync(file, "utf8");
+  const tagRe = /<(button|a)\b[\s\S]*?(?<!=)>/g;
+  let m: RegExpExecArray | null;
+  while ((m = tagRe.exec(content))) {
+    const tag = m[0];
+    if (/\btitle=/.test(tag)) {
+      titleHits.push({
+        file: path.relative(process.cwd(), file),
+        line: lineNumberAt(content, m.index),
+        text: tag.replace(/\s+/g, " "),
+      });
+    }
+  }
+}
+report("8. [warn] title= on an interactive <button>/<a> (unreachable by touch)", titleHits);
+
 console.log(
   `\n${hardFail ? "FAIL" : "PASS"}: checks 1-3 ${hardFail ? "found violations" : "clean"}. Checks 4-6 are informational.`
 );

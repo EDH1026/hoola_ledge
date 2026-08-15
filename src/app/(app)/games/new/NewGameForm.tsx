@@ -14,11 +14,13 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { createGame } from "@/lib/actions";
+import { createGame, deleteGame } from "@/lib/actions";
+import { EDIT_WINDOW_MS } from "@/lib/time";
 import { GAME_TYPE_LABELS, GAME_TYPES, GameType } from "@/lib/types";
 import { Card } from "@/components/ui/Card";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { Button } from "@/components/ui/Button";
+import { UndoStack, useUndoStack } from "@/components/ui/UndoStack";
 
 interface ParticipantLite {
   id: string;
@@ -39,6 +41,12 @@ function chipClassName(opts: { isOver?: boolean; isDragging?: boolean; isTapSele
   `;
 }
 
+// v2.19 (배치 B, PRD §24.9) — the "Lose 선택됨" subtitle used to render
+// *inside* this chip, which changed its height on selection and reflowed the
+// whole grid out from under the next tap. The selection state now shows only
+// via border/background color (already handled by chipClassName), and the
+// subtitle moved to the section header (see NewGameForm's `resultDescription`)
+// where it can't move anything else.
 function Chip({
   participant,
   isTapSelected,
@@ -67,11 +75,6 @@ function Chip({
       onClick={() => onTap(participant.id)}
       className={chipClassName({ isOver, isDragging, isTapSelected })}
     >
-      {isTapSelected && (
-        <span className="block text-[10px] font-semibold text-lose mb-0.5">
-          Lose 선택됨 · Win을 탭하세요
-        </span>
-      )}
       {participant.name}
     </div>
   );
@@ -88,9 +91,11 @@ function ChipOverlay({ name }: { name: string }) {
 export default function NewGameForm({
   participants,
   defaultAttendeeIds,
+  defaultGameType,
 }: {
   participants: ParticipantLite[];
   defaultAttendeeIds: string[];
+  defaultGameType: GameType;
 }) {
   const validDefaults = defaultAttendeeIds.filter((id) =>
     participants.some((p) => p.id === id)
@@ -98,7 +103,7 @@ export default function NewGameForm({
   const [attendeeIds, setAttendeeIds] = useState<string[]>(
     validDefaults.length >= 2 ? validDefaults : participants.map((p) => p.id)
   );
-  const [gameType, setGameType] = useState<GameType>("hoola");
+  const [gameType, setGameType] = useState<GameType>(defaultGameType);
   const [pending, setPendingResult] = useState<{
     winnerId: string;
     loserId: string;
@@ -108,6 +113,14 @@ export default function NewGameForm({
   const [error, setError] = useState<string | null>(null);
   const [isSaving, startTransition] = useTransition();
   const router = useRouter();
+
+  // v2.19 (배치 B, PRD §24.9) — "연속 기록 모드": 기록하고 계속 입력을 고르면
+  // 페이지를 떠나지 않고 폼에 머문다. sessionCount는 이 방문에서 몇 판을
+  // 기록했는지 세는 순수 UI 카운터(서버에 저장되지 않음), undo 스택은
+  // §15의 2시간 유예시간을 그대로 재사용한다(되돌리기 = restoreGame로 소프트
+  // 삭제 원복, 스키마 변경 없음).
+  const [sessionCount, setSessionCount] = useState(0);
+  const undo = useUndoStack();
 
   // dnd-kit assigns internal accessibility ids (aria-describedby) via a
   // module-level counter that isn't guaranteed to match between the server
@@ -212,12 +225,12 @@ export default function NewGameForm({
     setTapSelectedId(null);
   }
 
-  function handleConfirm() {
+  function handleConfirm(continueRecording: boolean) {
     if (!pending) return;
     setError(null);
     startTransition(async () => {
       try {
-        await createGame({
+        const { id, createdAt } = await createGame({
           gameType,
           attendeeIds,
           winnerId: pending.winnerId,
@@ -225,11 +238,34 @@ export default function NewGameForm({
           points,
           note,
         });
-        // 기록이 끝나면 곧바로 게임 기록 탭으로 이동해 방금 쓴 게 제대로
-        // 반영됐는지 바로 확인할 수 있게 한다 — createGame이 이미
-        // revalidatePath("/games")를 호출하므로 이 push는 최신 데이터를
-        // 그대로 불러온다. refresh()는 그걸 한 번 더 보장하기 위한 안전장치.
-        router.push("/games");
+
+        if (!continueRecording) {
+          // 기존 동작(PRD §18.4) 유지: 곧바로 게임 기록 탭으로 이동해 방금
+          // 쓴 게 제대로 반영됐는지 바로 확인할 수 있게 한다. createGame이
+          // 이미 revalidatePath("/games")를 호출하므로 이 push는 최신
+          // 데이터를 그대로 불러온다. refresh()는 그걸 한 번 더 보장하기
+          // 위한 안전장치.
+          router.push("/games");
+          router.refresh();
+          return;
+        }
+
+        // 연속 기록: 페이지를 떠나지 않는다. 종목·참가자·점수는 유지하고
+        // 승패 선택과 메모만 비운다 — 다음 판을 바로 입력할 수 있게.
+        const summary = `${nameMap.get(pending.winnerId)} ← ${nameMap.get(pending.loserId)} ${points}점 (${GAME_TYPE_LABELS[gameType]})`;
+        setSessionCount((n) => n + 1);
+        undo.push({
+          id,
+          message: `방금: ${summary}`,
+          expiresAt: new Date(createdAt).getTime() + EDIT_WINDOW_MS,
+          // 되돌리기 = 방금 만든 기록을 소프트 삭제하는 것과 동일하므로
+          // deleteGame을 그대로 쓴다(§15 2시간 창 안, restoreGame은 반대
+          // 방향인 "삭제 취소"용).
+          onUndo: () => deleteGame(id),
+        });
+        setPendingResult(null);
+        setTapSelectedId(null);
+        setNote("");
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "기록에 실패했습니다.");
@@ -237,8 +273,21 @@ export default function NewGameForm({
     });
   }
 
+  const resultDescription = tapSelectedId
+    ? `${nameMap.get(tapSelectedId)} 선택됨 (Lose) · Win 상대를 탭하세요`
+    : "드래그하거나, Lose → Win 순서로 탭하세요 (Lose가 Win에게 점수를 지급합니다).";
+
   return (
     <div className="space-y-6">
+      {sessionCount > 0 && (
+        <div className="space-y-2">
+          <div className="rounded-xl bg-surface-raised border border-line text-content-sub text-sm px-4 py-2.5">
+            이번에 <span className="font-semibold text-content tabular-nums">{sessionCount}판</span> 기록됨
+          </div>
+          <UndoStack entries={undo.entries} onRemove={undo.remove} />
+        </div>
+      )}
+
       <Card>
         <SectionTitle>1. 종목 선택</SectionTitle>
         <div className="grid grid-cols-3 gap-2 mt-3">
@@ -249,13 +298,18 @@ export default function NewGameForm({
                 key={gt}
                 type="button"
                 onClick={() => setGameType(gt)}
-                className={`flex items-center justify-center gap-1.5 rounded-lg border-2 px-3 py-2 text-sm font-medium transition active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${
+                className={`flex items-center justify-center gap-1 rounded-lg border-2 px-2 py-2.5 text-xs sm:text-sm font-medium transition active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${
                   selected
                     ? "border-emerald-600 bg-emerald-500/10 text-emerald-200"
                     : "border-line text-content-sub hover:bg-slate-700"
                 }`}
               >
-                {selected && <Check className="w-4 h-4 shrink-0" />}
+                {/* 아이콘 자리를 항상 확보 — 선택 시에만 나타나면 그만큼
+                    버튼 폭이 바뀌어 그리드가 재배치된다(PRD §24.9). */}
+                <Check
+                  className={`w-3.5 h-3.5 shrink-0 ${selected ? "" : "opacity-0"}`}
+                  aria-hidden
+                />
                 {GAME_TYPE_LABELS[gt]}
               </button>
             );
@@ -304,9 +358,7 @@ export default function NewGameForm({
 
       {attendeeIds.length >= 2 && (
         <Card>
-          <SectionTitle description="드래그하거나, Lose → Win 순서로 탭하세요 (Lose가 Win에게 점수를 지급합니다).">
-            3. 결과 입력
-          </SectionTitle>
+          <SectionTitle description={resultDescription}>3. 결과 입력</SectionTitle>
           {mounted ? (
             <DndContext
               sensors={sensors}
@@ -367,7 +419,7 @@ export default function NewGameForm({
                 <button
                   type="button"
                   onClick={() => setPoints((p) => Math.max(1, p - 1))}
-                  className="w-8 h-8 rounded-lg border border-slate-700 text-content-sub hover:bg-slate-700 flex items-center justify-center transition active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                  className="w-11 h-11 rounded-lg border border-slate-700 text-content-sub hover:bg-slate-700 flex items-center justify-center transition active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
                   aria-label="점수 감소"
                 >
                   −
@@ -380,12 +432,12 @@ export default function NewGameForm({
                   onChange={(e) =>
                     setPoints(Math.max(1, Math.round(Number(e.target.value) || 1)))
                   }
-                  className="bg-surface w-14 rounded-lg border border-slate-700 px-2 py-1.5 text-sm text-center text-content tabular-nums"
+                  className="w-14 h-11 rounded-lg border border-slate-700 bg-surface px-2 text-sm text-center text-content tabular-nums"
                 />
                 <button
                   type="button"
                   onClick={() => setPoints((p) => p + 1)}
-                  className="w-8 h-8 rounded-lg border border-slate-700 text-content-sub hover:bg-slate-700 flex items-center justify-center transition active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                  className="w-11 h-11 rounded-lg border border-slate-700 text-content-sub hover:bg-slate-700 flex items-center justify-center transition active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
                   aria-label="점수 증가"
                 >
                   +
@@ -409,11 +461,24 @@ export default function NewGameForm({
             날짜·시간은 기록하는 지금 이 순간으로 자동 저장됩니다.
           </p>
           {error && <p className="text-sm text-red-400">{error}</p>}
-          <div className="flex gap-2">
-            <Button variant="primary" onClick={handleConfirm} disabled={isSaving} pending={isSaving} pendingText="기록 중...">
-              이 결과로 기록하기
+          <div className="flex gap-2 flex-wrap">
+            <Button
+              variant="primary"
+              onClick={() => handleConfirm(true)}
+              disabled={isSaving}
+              pending={isSaving}
+              pendingText="기록 중..."
+            >
+              기록하고 계속 입력
             </Button>
-            <Button variant="neutral" onClick={() => setPendingResult(null)} disabled={isSaving}>
+            <Button
+              variant="neutral"
+              onClick={() => handleConfirm(false)}
+              disabled={isSaving}
+            >
+              기록하고 목록으로
+            </Button>
+            <Button variant="ghost" onClick={() => setPendingResult(null)} disabled={isSaving}>
               취소
             </Button>
           </div>

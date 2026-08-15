@@ -83,6 +83,19 @@ export function isWithinEditWindow(createdAt: string): boolean {
 }
 
 /**
+ * v2.19: milliseconds left in the v2.14 non-admin edit window; 0 or negative
+ * once it's expired. A pure function of `createdAt` and the current instant —
+ * it doesn't schedule anything itself, so a UI that wants a live "1시간 23분
+ * 남음" countdown has to re-call it on its own timer (see the games list row
+ * for the pattern). `isWithinEditWindow` is left as its own function (rather
+ * than redefined in terms of this one) since `actions.ts`'s server-side gate
+ * depends on it and has no reason to change shape here.
+ */
+export function editWindowRemainingMs(createdAt: string): number {
+  return EDIT_WINDOW_MS - (Date.now() - new Date(createdAt).getTime());
+}
+
+/**
  * v2.15: "2026-08-14" -> "2026-Q3". String-slice only, deliberately never
  * `new Date(date)` — that parses as UTC midnight and can shift the date (and
  * therefore the quarter) by a day, the same class of bug PRD §13.5 already

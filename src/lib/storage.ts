@@ -227,6 +227,12 @@ export async function softDeleteGame(id: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+/** v2.19 (배치 B, PRD §24.11): exact inverse of softDeleteGame, for the "삭제됨 · 되돌리기" snackbar — undoes a soft delete without touching any other column. */
+export async function restoreGame(id: string): Promise<void> {
+  const { error } = await getSupabase().from("games").update({ active: true }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
 /**
  * Admin-only full-field update (see actions.ts updateGame) — unlike softDeleteGame,
  * this can touch every column including date/time and active, so an admin can

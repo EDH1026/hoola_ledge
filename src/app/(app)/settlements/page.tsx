@@ -1,20 +1,16 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { format } from "date-fns";
 import { getFullDB } from "@/lib/storage";
 import { computeNetBalances, simplifyDebts } from "@/lib/settle";
-import { deleteSettlement } from "@/lib/actions";
-import { SettlementTypeBadge, LedgerAdjustmentBadge } from "@/components/badges";
 import { normalizeSettlementType } from "@/lib/types";
 import { filterByDatePreset, RangePreset } from "@/lib/stats";
 import { ADMIN_COOKIE_NAME, verifyAdminCookie } from "@/lib/auth";
-import { isWithinEditWindow } from "@/lib/time";
 import { Card } from "@/components/ui/Card";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Button } from "@/components/ui/Button";
 import { filterChipClassName } from "@/components/ui/FilterChip";
 import SettlementsClient from "./SettlementsClient";
+import HistoryList from "./HistoryList";
 
 export const dynamic = "force-dynamic";
 
@@ -284,48 +280,14 @@ export default async function SettlementsPage({
         >
           정산 & 조정 이력 ({history.length}건)
         </SectionTitle>
-        {history.length === 0 ? (
-          <div className="mt-4">
-            <EmptyState title="해당하는 이력이 없습니다." />
-          </div>
-        ) : (
-          <ul className="divide-y divide-line mt-3">
-            {history.map((row) => (
-              <li
-                key={`${row.kind}-${row.id}`}
-                className="py-2.5 flex flex-wrap items-center gap-3 text-sm"
-              >
-                <span className="text-content-muted w-24 shrink-0 tabular-nums">
-                  {format(new Date(row.date), "yyyy-MM-dd")}
-                </span>
-                {row.kind === "settlement" ? (
-                  <SettlementTypeBadge type={row.type} />
-                ) : (
-                  <LedgerAdjustmentBadge />
-                )}
-                <span className="flex-1 min-w-[140px] tabular-nums">
-                  <span className="font-medium text-content">{nameOf(row.fromId)}</span>
-                  <span className="text-content-faint mx-1">→</span>
-                  <span className="font-medium text-content">{nameOf(row.toId)}</span>
-                  <span className="text-content-muted ml-2">{row.amount}점</span>
-                  {row.note && (
-                    <span className="text-xs text-content-muted ml-2">
-                      ({row.note})
-                    </span>
-                  )}
-                </span>
-                {row.kind === "settlement" &&
-                  (isAdmin || isWithinEditWindow(row.createdAt)) && (
-                    <form action={deleteSettlement.bind(null, row.id)}>
-                      <Button type="submit" variant="danger" size="sm">
-                        취소
-                      </Button>
-                    </form>
-                  )}
-              </li>
-            ))}
-          </ul>
-        )}
+        <div className="mt-3">
+          <HistoryList
+            history={history}
+            isAdmin={isAdmin}
+            participants={participants.map((p) => ({ id: p.id, name: p.name }))}
+            filterActive={filter !== "all"}
+          />
+        </div>
       </Card>
     </div>
   );

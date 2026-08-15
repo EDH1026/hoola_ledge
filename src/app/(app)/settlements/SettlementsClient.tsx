@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { TriangleAlert } from "lucide-react";
 import { recordSettlement, deleteSettlement } from "@/lib/actions";
 import { WritableSettlementType } from "@/lib/types";
@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/Card";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/Button";
+import { UndoStack, useUndoStack } from "@/components/ui/UndoStack";
 
 interface ParticipantLite {
   id: string;
@@ -31,7 +32,7 @@ const LARGE_AMOUNT_THRESHOLD = 5;
 interface JustRecorded {
   id: string;
   summary: string;
-  expiresAt: number; // Date.now()-comparable ms timestamp — PRD 15.2's 2-hour undo window
+  createdAt: string;
 }
 
 export default function SettlementsClient({
@@ -47,71 +48,23 @@ export default function SettlementsClient({
   );
   const nameOf = (id: string) => nameMap.get(id) ?? "(삭제됨)";
 
-  const [justRecorded, setJustRecorded] = useState<JustRecorded | null>(null);
-  const [expired, setExpired] = useState(false);
-  const [undoing, startUndoTransition] = useTransition();
-  const [undoError, setUndoError] = useState<string | null>(null);
+  // v2.19 (배치 B, PRD §24.11) — 이전엔 "방금 기록됨" 배너가 슬롯 1개라
+  // 연속으로 2건을 기록하면 첫 번째 취소 버튼이 사라졌다. 공용 UndoStack으로
+  // 바꿔 최근 몇 건이든 각자의 되돌리기를 유지한다.
+  const undo = useUndoStack();
 
   function handleRecorded(detail: JustRecorded) {
-    setUndoError(null);
-    setExpired(false);
-    setJustRecorded(detail);
-  }
-
-  function handleUndo() {
-    if (!justRecorded) return;
-    const { id } = justRecorded;
-    setUndoError(null);
-    startUndoTransition(async () => {
-      try {
-        await deleteSettlement(id);
-        setJustRecorded(null);
-      } catch (e) {
-        // Can happen if the 2-hour window lapsed between the banner
-        // rendering and the click, or an admin-only edge case — either way
-        // surface it instead of leaving the button silently do nothing.
-        setUndoError(e instanceof Error ? e.message : "취소에 실패했습니다.");
-      }
+    undo.push({
+      id: detail.id,
+      message: `방금 기록됨: ${detail.summary}`,
+      expiresAt: new Date(detail.createdAt).getTime() + EDIT_WINDOW_MS,
+      onUndo: () => deleteSettlement(detail.id),
     });
   }
 
-  // Flips the undo button off once its window (PRD 15.2) elapses, so it
-  // doesn't sit there enabled-looking indefinitely if this tab is just left
-  // open. `expired` (not a live Date.now() read at render time) is the only
-  // thing render looks at — the impure clock read stays inside the effect.
-  useEffect(() => {
-    if (!justRecorded) return;
-    const remaining = Math.max(0, justRecorded.expiresAt - Date.now());
-    const timer = setTimeout(() => setExpired(true), remaining);
-    return () => clearTimeout(timer);
-  }, [justRecorded]);
-
-  const canUndo = !!justRecorded && !expired;
-
   return (
     <div className="space-y-6">
-      {justRecorded && (
-        <div className="rounded-xl bg-emerald-500/10 border border-emerald-800 text-emerald-300 text-sm px-4 py-3 space-y-1">
-          <div className="flex items-center justify-between gap-3">
-            <span>방금 기록됨: {justRecorded.summary}</span>
-            {canUndo ? (
-              <button
-                type="button"
-                onClick={handleUndo}
-                disabled={undoing}
-                className="text-emerald-300 font-semibold hover:underline disabled:opacity-50 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface rounded"
-              >
-                {undoing ? "취소 중..." : "취소"}
-              </button>
-            ) : (
-              <span className="text-emerald-400/70 text-xs whitespace-nowrap">
-                취소 가능 시간이 지났습니다
-              </span>
-            )}
-          </div>
-          {undoError && <p className="text-xs text-red-400">{undoError}</p>}
-        </div>
-      )}
+      <UndoStack entries={undo.entries} onRemove={undo.remove} />
 
       <Card>
         <SectionTitle>정리된 채권-채무 관계 ({transactions.length}건)</SectionTitle>
@@ -217,7 +170,7 @@ function TransactionCard({
         onRecorded({
           id,
           summary: `${fromName} → ${toName} ${amount}점 (실제 정산)`,
-          expiresAt: new Date(createdAt).getTime() + EDIT_WINDOW_MS,
+          createdAt,
         });
         setStep("idle");
         setAmountText("");
@@ -343,7 +296,7 @@ function DonationForm({
         onRecorded({
           id,
           summary: `${nameMap.get(fromId)} → ${nameMap.get(toId)} ${amount}점 (기부)`,
-          expiresAt: new Date(createdAt).getTime() + EDIT_WINDOW_MS,
+          createdAt,
         });
         setStep("idle");
         setAmountText("");
@@ -510,7 +463,7 @@ function RepaymentForm({
         onRecorded({
           id,
           summary: `${nameMap.get(fromId)} → ${nameMap.get(toId)} ${amount}점 (변제)`,
-          expiresAt: new Date(createdAt).getTime() + EDIT_WINDOW_MS,
+          createdAt,
         });
         setStep("idle");
         setAmountText("");
