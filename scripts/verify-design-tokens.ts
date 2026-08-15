@@ -11,6 +11,29 @@
 
 import { readFileSync, readdirSync, statSync } from "fs";
 import path from "path";
+import { PARTICIPANT_PALETTE } from "../src/lib/participant-colors";
+import { HEAT_TIER_COLORS, HEAT_TIER_ORDER } from "../src/lib/heatmap-tiers";
+
+// ---- WCAG 2.x relative luminance / contrast ratio, no external deps ----
+// (배치 C, PRD §24.13 작업 7 — "외부 의존성 추가하지 마")
+function relativeLuminance(hex: string): number {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const linearize = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+  return 0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b);
+}
+
+function contrastRatio(hex1: string, hex2: string): number {
+  const l1 = relativeLuminance(hex1);
+  const l2 = relativeLuminance(hex2);
+  const lighter = Math.max(l1, l2);
+  const darker = Math.min(l1, l2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+const SURFACE_HEX = "#0f172a"; // --color-surface
+const LIGHT_TEXT_HEX = "#f8fafc"; // near --color-content, used on heat tiles
 
 const SRC_DIR = path.join(__dirname, "..", "src");
 const UI_DIR = path.join(SRC_DIR, "components", "ui");
@@ -180,7 +203,7 @@ for (const file of nonUiFiles) {
       ? classMatch[1] ?? classMatch[2] ?? classMatch[3] ?? classMatch[4] ?? ""
       : "";
     const isInteractive = /onClick=|type=["']submit["']/.test(tag);
-    const hasHitTarget = /\b(?:min-h-(?:11|12)|h-11|h-12|w-11|w-12)\b/.test(cls);
+    const hasHitTarget = /\b(?:min-h-(?:9|11|12)|h-11|h-12|w-11|w-12)\b/.test(cls);
     if (isInteractive && cls && !hasHitTarget) {
       smallButtonHits.push({
         file: path.relative(process.cwd(), file),
@@ -217,7 +240,42 @@ for (const file of nonUiFiles) {
 }
 report("8. [warn] title= on an interactive <button>/<a> (unreachable by touch)", titleHits);
 
+// ---- 9. participant palette contrast (배치 C, PRD §24.13 작업 7) ----
+// Every color in PARTICIPANT_PALETTE must hit >=3:1 against --color-surface
+// — this is what makes a chart line/dot legible against the app's dark
+// background. Precise math, not a heuristic, so it fails the build like
+// checks 1-3.
+console.log("\n9. participant palette contrast vs surface (must be >=3:1):");
+let paletteFail = false;
+for (const hex of PARTICIPANT_PALETTE) {
+  const ratio = contrastRatio(hex, SURFACE_HEX);
+  const ok = ratio >= 3;
+  console.log(`  ${hex}  ${ratio.toFixed(2)}:1  ${ok ? "OK" : "FAIL"}`);
+  if (!ok) paletteFail = true;
+}
+if (paletteFail) hardFail = true;
+
+// ---- 10. heatmap tier contrast (배치 C, PRD §24.13 작업 7) ----
+// Each of the 5 discrete heat-tier colors must hit >=1.5:1 against the
+// surrounding surface (so the tile itself reads as "colored" against the
+// page), and light text on top of the tile must hit >=4.5:1 (so the number
+// inside stays legible per WCAG AA body text).
+console.log("\n10. heatmap tier contrast (tile vs surface >=1.5:1, text vs tile >=4.5:1):");
+let heatmapFail = false;
+for (const tier of HEAT_TIER_ORDER) {
+  const hex = HEAT_TIER_COLORS[tier];
+  const bgRatio = contrastRatio(hex, SURFACE_HEX);
+  const textRatio = contrastRatio(LIGHT_TEXT_HEX, hex);
+  const bgOk = bgRatio >= 1.5;
+  const textOk = textRatio >= 4.5;
+  console.log(
+    `  ${tier} ${hex}  vs surface ${bgRatio.toFixed(2)}:1 ${bgOk ? "OK" : "FAIL"}  |  text vs tile ${textRatio.toFixed(2)}:1 ${textOk ? "OK" : "FAIL"}`
+  );
+  if (!bgOk || !textOk) heatmapFail = true;
+}
+if (heatmapFail) hardFail = true;
+
 console.log(
-  `\n${hardFail ? "FAIL" : "PASS"}: checks 1-3 ${hardFail ? "found violations" : "clean"}. Checks 4-6 are informational.`
+  `\n${hardFail ? "FAIL" : "PASS"}: checks 1-3, 9-10 ${hardFail ? "found violations" : "clean"}. Checks 4-8 are informational.`
 );
 if (hardFail) process.exit(1);

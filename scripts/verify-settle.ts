@@ -4,6 +4,7 @@ import { simplifyDebts, computeNetBalances } from "../src/lib/settle";
 import { computeDailySequenceNumbers } from "../src/lib/games";
 import { computeParticipantStats, computeHeadToHead } from "../src/lib/stats";
 import { GameResult, Settlement, LedgerAdjustment } from "../src/lib/types";
+import { balanceVariant, formatBalance } from "../src/lib/settlement-display";
 
 function assert(cond: boolean, msg: string) {
   if (!cond) {
@@ -289,5 +290,35 @@ function assert(cond: boolean, msg: string) {
     `case14: applying all transactions should zero every balance, got ${JSON.stringify([...remaining])}`
   );
 }
+
+// Case 15 (배치 C, PRD §24.13, 기능 수정): "잔액이 정확히 0인 참가자가
+// 빨간색으로 표시된다" 버그의 회귀 테스트. computeNetBalances 자체는 이미
+// 정확히 0인 항목을 맵에서 지운다("Clean up exact-zero entries for
+// tidiness" — settle.ts 참고, 이번 배치에서 건드리지 않은 기존 동작)는
+// 걸 A/B 두 참가자가 서로 정확히 상쇄되는 시나리오로 확인한다. 그 위에서
+// settlements/page.tsx가 쓰는 색 결정 함수(balanceVariant/formatBalance,
+// src/lib/settlement-display.ts)를 0/양수/음수 각각에 대해 직접 검증한다
+// — 그 함수가 UI에서 실제로 쓰이는 값이므로, computeNetBalances가 0을
+// 지우든 안 지우든 "0이 들어오면 빨강이 아니다"가 항상 성립해야 한다.
+{
+  const games: GameResult[] = [
+    { id: "1", date: "2026-01-01", attendeeIds: ["A", "B"], winnerId: "A", loserId: "B", points: 3, createdAt: "" },
+    { id: "2", date: "2026-01-02", attendeeIds: ["A", "B"], winnerId: "B", loserId: "A", points: 3, createdAt: "" },
+  ];
+  const balances = computeNetBalances(games, []);
+  assert(
+    !balances.has("A") && !balances.has("B"),
+    `case15a: two participants whose games exactly offset should both be absent from the balance map (settle.ts already prunes exact-zero entries), got ${JSON.stringify([...balances])}`
+  );
+}
+assert(balanceVariant(0) === "even", `case15b: balanceVariant(0) should be "even", got ${balanceVariant(0)}`);
+assert(balanceVariant(5) === "positive", `case15b: balanceVariant(5) should be "positive", got ${balanceVariant(5)}`);
+assert(balanceVariant(-5) === "negative", `case15b: balanceVariant(-5) should be "negative", got ${balanceVariant(-5)}`);
+assert(
+  formatBalance(0) === "정산 완료" && !formatBalance(0).includes("0"),
+  `case15c: formatBalance(0) must not render as a bare "0" (the original bug's symptom), got "${formatBalance(0)}"`
+);
+assert(formatBalance(5) === "+5점", `case15c: formatBalance(5) should be "+5점", got "${formatBalance(5)}"`);
+assert(formatBalance(-5) === "-5점", `case15c: formatBalance(-5) should be "-5점", got "${formatBalance(-5)}"`);
 
 console.log("Done.");

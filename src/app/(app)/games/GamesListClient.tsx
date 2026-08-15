@@ -1,10 +1,9 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { Fragment, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { format } from "date-fns";
-import { Check, Pencil, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Pencil, Trash2 } from "lucide-react";
 import { deleteGame, restoreGame, hardDeleteGame, updateGame } from "@/lib/actions";
 import { isActiveGame, withinDayKey } from "@/lib/games";
 import {
@@ -45,6 +44,18 @@ const GAME_TYPE_OPTIONS: { value: GameTypeFilter; label: string }[] = [
 
 function gameTypeLabel(gt?: GameType): string {
   return gt ? GAME_TYPE_LABELS[gt] : "종목 미지정";
+}
+
+const WEEKDAY_LABELS_KO = ["일", "월", "화", "수", "목", "금", "토"];
+
+// v2.19 (배치 C, PRD §24.5) — 게임 밤 하나를 보는 게 기본 사용 패턴인데
+// 행마다 날짜를 반복해서 찍고 있었다. 날짜를 그룹 헤더로 올리고 행에는
+// 시각만 남긴다. 그룹핑 키는 영업일 g.date(§22.4의 "day를 가리키는 라벨"
+// 규칙) — getUTCDay()를 쓰는 건 "yyyy-MM-dd" 문자열이 UTC 자정으로
+// 파싱되기 때문에(ISO 8601 날짜 전용 문자열의 표준 동작), 보는 사람의
+// 타임존과 무관하게 항상 같은 요일이 나오게 하기 위해서다.
+function formatDateWithWeekday(date: string): string {
+  return `${date} (${WEEKDAY_LABELS_KO[new Date(date).getUTCDay()]})`;
 }
 
 function applyOrDelete(params: URLSearchParams, key: string, value: string, defaultValue: string) {
@@ -195,6 +206,16 @@ export default function GamesListClient({
   const [confirmHardDeleteId, setConfirmHardDeleteId] = useState<string | null>(null);
   const [isHardDeleting, startHardDeleteTransition] = useTransition();
   const undo = useUndoStack();
+  // v2.19 (배치 C, PRD §24.5) — 참석자는 인원수만 기본 노출, 탭하면 펼친다.
+  const [expandedAttendees, setExpandedAttendees] = useState<Set<string>>(new Set());
+  function toggleAttendees(id: string) {
+    setExpandedAttendees((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   const filtered = useMemo(() => {
     return games
@@ -224,6 +245,14 @@ export default function GamesListClient({
     () => computeParticipantPointTotals(participants, activeFiltered),
     [participants, activeFiltered]
   );
+  // 날짜 그룹 헤더의 "N게임" — 실제로 그 헤더 아래 나열될 행 수와 맞춰야
+  // 하므로 activeFiltered가 아니라 filtered(관리자에게 보이는 비활성 포함)
+  // 기준으로 센다.
+  const dayGroupCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const g of filtered) counts.set(g.date, (counts.get(g.date) ?? 0) + 1);
+    return counts;
+  }, [filtered]);
 
   function handleDelete(g: GameResult) {
     setDeleteError(null);
@@ -429,7 +458,7 @@ export default function GamesListClient({
           </div>
         ) : (
           <ul className="divide-y divide-line">
-            {filtered.map((g) => {
+            {filtered.map((g, idx) => {
               const seq = sequenceNumbers[g.id];
               const attendeeNames = g.attendeeIds.map(
                 (id) => nameMap.get(id) ?? "(삭제됨)"
@@ -437,6 +466,7 @@ export default function GamesListClient({
               const points = g.points ?? 1;
               const inactive = g.active === false;
               const isEditing = editingId === g.id;
+              const attendeesExpanded = expandedAttendees.has(g.id);
               // v2.18 (PRD §22) — g.date is the business day this game is
               // *grouped* under, not necessarily the calendar date its time
               // actually occurred on; wallClock recovers the real one for
@@ -451,133 +481,173 @@ export default function GamesListClient({
               const canEdit = isAdmin || (!inactive && editableByUser);
               const canDelete = !inactive && (isAdmin || editableByUser);
               const hasMenu = canEdit || canDelete || isAdmin;
+              // v2.19 (배치 C, PRD §24.5) — 날짜 그룹 헤더: 게임 밤 하나를
+              // 보는 게 기본 사용 패턴이므로 날짜를 행마다 반복하는 대신
+              // 그룹 헤더로 한 번만 올린다. 그룹핑 키는 영업일 g.date —
+              // filtered가 이미 date desc 정렬이므로 이전 행과 비교하는
+              // 것만으로 경계를 찾을 수 있다.
+              const showDateHeader = idx === 0 || filtered[idx - 1].date !== g.date;
               return (
-                <li
-                  key={g.id}
-                  className={`p-4 space-y-2 ${
-                    inactive ? "border-l-2 border-slate-500 bg-surface-raised/50" : ""
-                  }`}
-                >
-                  <div className="flex flex-wrap items-center gap-2 justify-between">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm text-content-muted whitespace-nowrap tabular-nums">
-                        {format(new Date(wallClock.date), "yyyy-MM-dd")}
-                        {wallClock.time ? ` ${wallClock.time}` : ""}
-                        {seq ? ` · ${seq}차전` : ""}
+                <Fragment key={g.id}>
+                  {showDateHeader && (
+                    <li className="px-4 py-2 bg-surface-raised/60 text-xs font-medium text-content-muted tabular-nums">
+                      {formatDateWithWeekday(g.date)} · {dayGroupCounts.get(g.date) ?? 0}게임
+                    </li>
+                  )}
+                  <li
+                    className={`p-4 space-y-2 ${
+                      inactive ? "border-l-2 border-slate-500 bg-surface-raised/50" : ""
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center gap-2 justify-between">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <GameTypeBadge gameType={g.gameType} />
+                        {/* v2.19 (PRD §24.5) — 게임 밤 표식은 그룹이 아니라
+                            행에 유지한다: 어긋나는 건 개별 행이지 그룹
+                            전체가 아니다(§22.5) — 8/14 그룹 안에 "게임
+                            밤" 표식이 붙은 8/15 01:00 행이 섞여 있는 게
+                            정상이다. */}
+                        {wallClock.crossedMidnight && (
+                          <GameNightBadge businessDate={wallClock.businessDate} />
+                        )}
+                        {inactive && <InactiveBadge />}
+                        {!isAdmin && !inactive && canEdit && <EditWindowChip createdAt={g.createdAt} />}
+                      </div>
+                      <span className="text-xs text-content-muted whitespace-nowrap tabular-nums">
+                        {seq ? `${seq}차전` : ""}
+                        {seq && wallClock.time ? " · " : ""}
+                        {wallClock.time ?? ""}
                       </span>
-                      <GameTypeBadge gameType={g.gameType} />
-                      {wallClock.crossedMidnight && (
-                        <GameNightBadge businessDate={wallClock.businessDate} />
-                      )}
-                      {inactive && <InactiveBadge />}
-                      {/* v2.19 (PRD §24.12) — 관리자는 시간 제한이 없으므로 칩을 띄우지 않는다. */}
-                      {!isAdmin && !inactive && canEdit && <EditWindowChip createdAt={g.createdAt} />}
                     </div>
-                    {isAdmin && confirmHardDeleteId === g.id ? (
-                      <span className="flex items-center gap-2 text-xs">
-                        <span className="text-red-300 font-medium">
-                          완전 삭제할까요? 되돌릴 수 없습니다.
-                        </span>
-                        <Button
-                          variant="danger"
-                          onClick={() => handleHardDelete(g.id)}
-                          disabled={isHardDeleting}
-                          pending={isHardDeleting}
-                          pendingText="삭제 중..."
-                        >
-                          확인
-                        </Button>
-                        <Button
-                          variant="neutral"
-                          onClick={() => setConfirmHardDeleteId(null)}
-                          disabled={isHardDeleting}
-                        >
-                          취소
-                        </Button>
-                      </span>
-                    ) : (
-                      hasMenu && (
-                        <OverflowMenu label="게임 기록 더 보기">
-                          {(close) => (
-                            <>
-                              {canEdit && (
-                                <OverflowMenuItem
-                                  onClick={() => {
-                                    setEditingId(isEditing ? null : g.id);
-                                    close();
-                                  }}
-                                >
-                                  <Pencil className="w-4 h-4 mr-2 shrink-0" aria-hidden />
-                                  {isEditing ? "수정 닫기" : "수정"}
-                                </OverflowMenuItem>
-                              )}
-                              {canDelete && (
-                                <OverflowMenuItem
-                                  danger
-                                  disabled={isPending}
-                                  onClick={() => {
-                                    handleDelete(g);
-                                    close();
-                                  }}
-                                >
-                                  <Trash2 className="w-4 h-4 mr-2 shrink-0" aria-hidden />
-                                  삭제
-                                </OverflowMenuItem>
-                              )}
-                              {isAdmin && (
-                                <OverflowMenuItem
-                                  danger
-                                  onClick={() => {
-                                    setConfirmHardDeleteId(g.id);
-                                    close();
-                                  }}
-                                >
-                                  <Trash2 className="w-4 h-4 mr-2 shrink-0" aria-hidden />
-                                  완전삭제
-                                </OverflowMenuItem>
-                              )}
-                            </>
-                          )}
-                        </OverflowMenu>
-                      )
-                    )}
-                  </div>
-                  {deleteError?.id === g.id && (
-                    <p className="text-xs text-red-400">{deleteError.message}</p>
-                  )}
-                  <div className="text-sm tabular-nums">
-                    <span className="font-semibold text-emerald-400">
-                      {nameMap.get(g.winnerId) ?? "(삭제됨)"}
-                    </span>
-                    <span className="text-content-muted mx-1.5">Win · Lose</span>
-                    <span className="font-semibold text-lose">
-                      {nameMap.get(g.loserId) ?? "(삭제됨)"}
-                    </span>
-                    <span className="text-xs text-content-muted ml-2">
-                      · {points}점
-                    </span>
-                    {g.note && (
-                      <span className="text-xs text-content-muted ml-2">
-                        · {g.note}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-content-muted">
-                    참석 {g.attendeeIds.length}명 · {attendeeNames.join(", ")}
-                  </p>
 
-                  {isEditing && (
-                    <GameEditForm
-                      key={g.id}
-                      game={g}
-                      participants={participants}
-                      nameMap={nameMap}
-                      isAdmin={isAdmin}
-                      onCancel={() => setEditingId(null)}
-                      onSaved={() => setEditingId(null)}
-                    />
-                  )}
-                </li>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-sm tabular-nums truncate">
+                        <span className="font-semibold text-emerald-400">
+                          {nameMap.get(g.winnerId) ?? "(삭제됨)"}
+                        </span>
+                        <span className="text-content-muted mx-1.5">→</span>
+                        <span className="font-semibold text-lose">
+                          {nameMap.get(g.loserId) ?? "(삭제됨)"}
+                        </span>
+                      </span>
+                      {/* v2.19 (PRD §24.5) — 장부 앱의 핵심 값인 점수를
+                          우측 정렬 + text-base font-semibold로 승격했다
+                          (예전엔 12px, 이름보다 흐렸다). */}
+                      <span className="text-base font-semibold text-content tabular-nums shrink-0">
+                        {points}점
+                      </span>
+                    </div>
+
+                    {g.note && (
+                      // v2.19 — 메모가 점수와 완전히 같은 스타일이라 구분이
+                      // 안 됐다. 별도 줄로 뺐다.
+                      <p className="text-xs text-content-muted">{g.note}</p>
+                    )}
+
+                    {deleteError?.id === g.id && (
+                      <p className="text-xs text-red-400">{deleteError.message}</p>
+                    )}
+
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleAttendees(g.id)}
+                        className="inline-flex items-center gap-1 min-h-9 -my-1 text-xs text-content-muted hover:text-content-sub rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                        aria-expanded={attendeesExpanded}
+                      >
+                        참석 {g.attendeeIds.length}명
+                        <ChevronDown
+                          className={`w-3 h-3 transition-transform ${attendeesExpanded ? "rotate-180" : ""}`}
+                          aria-hidden
+                        />
+                      </button>
+
+                      {isAdmin && confirmHardDeleteId === g.id ? (
+                        <span className="flex items-center gap-2 text-xs">
+                          <span className="text-red-300 font-medium">
+                            완전 삭제할까요? 되돌릴 수 없습니다.
+                          </span>
+                          <Button
+                            variant="danger"
+                            onClick={() => handleHardDelete(g.id)}
+                            disabled={isHardDeleting}
+                            pending={isHardDeleting}
+                            pendingText="삭제 중..."
+                          >
+                            확인
+                          </Button>
+                          <Button
+                            variant="neutral"
+                            onClick={() => setConfirmHardDeleteId(null)}
+                            disabled={isHardDeleting}
+                          >
+                            취소
+                          </Button>
+                        </span>
+                      ) : (
+                        hasMenu && (
+                          <OverflowMenu label="게임 기록 더 보기">
+                            {(close) => (
+                              <>
+                                {canEdit && (
+                                  <OverflowMenuItem
+                                    onClick={() => {
+                                      setEditingId(isEditing ? null : g.id);
+                                      close();
+                                    }}
+                                  >
+                                    <Pencil className="w-4 h-4 mr-2 shrink-0" aria-hidden />
+                                    {isEditing ? "수정 닫기" : "수정"}
+                                  </OverflowMenuItem>
+                                )}
+                                {canDelete && (
+                                  <OverflowMenuItem
+                                    danger
+                                    disabled={isPending}
+                                    onClick={() => {
+                                      handleDelete(g);
+                                      close();
+                                    }}
+                                  >
+                                    <Trash2 className="w-4 h-4 mr-2 shrink-0" aria-hidden />
+                                    삭제
+                                  </OverflowMenuItem>
+                                )}
+                                {isAdmin && (
+                                  <OverflowMenuItem
+                                    danger
+                                    onClick={() => {
+                                      setConfirmHardDeleteId(g.id);
+                                      close();
+                                    }}
+                                  >
+                                    <Trash2 className="w-4 h-4 mr-2 shrink-0" aria-hidden />
+                                    완전삭제
+                                  </OverflowMenuItem>
+                                )}
+                              </>
+                            )}
+                          </OverflowMenu>
+                        )
+                      )}
+                    </div>
+                    {attendeesExpanded && (
+                      <p className="text-xs text-content-muted">{attendeeNames.join(", ")}</p>
+                    )}
+
+                    {isEditing && (
+                      <GameEditForm
+                        key={g.id}
+                        game={g}
+                        participants={participants}
+                        nameMap={nameMap}
+                        isAdmin={isAdmin}
+                        onCancel={() => setEditingId(null)}
+                        onSaved={() => setEditingId(null)}
+                      />
+                    )}
+                  </li>
+                </Fragment>
               );
             })}
           </ul>

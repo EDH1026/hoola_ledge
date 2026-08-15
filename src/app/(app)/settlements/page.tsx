@@ -9,19 +9,11 @@ import { Card } from "@/components/ui/Card";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { filterChipClassName } from "@/components/ui/FilterChip";
+import { balanceVariant, formatBalance } from "@/lib/settlement-display";
 import SettlementsClient from "./SettlementsClient";
 import HistoryList from "./HistoryList";
 
 export const dynamic = "force-dynamic";
-
-type HistoryFilter = "all" | "payment" | "donation" | "adjustment";
-
-const FILTER_OPTIONS: { value: HistoryFilter; label: string }[] = [
-  { value: "all", label: "전체" },
-  { value: "payment", label: "실제 정산" },
-  { value: "donation", label: "기부" },
-  { value: "adjustment", label: "과거 기록" },
-];
 
 const DONATION_RANGE_OPTIONS: { value: RangePreset; label: string }[] = [
   { value: "30d", label: "최근 30일" },
@@ -33,15 +25,12 @@ const DONATION_RANGE_OPTIONS: { value: RangePreset; label: string }[] = [
 export default async function SettlementsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ filter?: string; donationRange?: string }>;
+  searchParams: Promise<{ donationRange?: string }>;
 }) {
   const store = await cookies();
   const isAdmin = await verifyAdminCookie(store.get(ADMIN_COOKIE_NAME)?.value);
 
-  const { filter: rawFilter, donationRange: rawDonationRange } = await searchParams;
-  const filter: HistoryFilter = FILTER_OPTIONS.some((o) => o.value === rawFilter)
-    ? (rawFilter as HistoryFilter)
-    : "all";
+  const { donationRange: rawDonationRange } = await searchParams;
   const donationRange: RangePreset = DONATION_RANGE_OPTIONS.some(
     (o) => o.value === rawDonationRange
   )
@@ -109,13 +98,12 @@ export default async function SettlementsPage({
     note: a.note,
   }));
 
-  const history = [...settlementRows, ...adjustmentRows]
-    .filter((row) => {
-      if (filter === "all") return true;
-      if (filter === "adjustment") return row.kind === "adjustment";
-      return row.kind === "settlement" && row.type === filter;
-    })
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  // v2.19 (배치 C, PRD §24.13) — 필터링은 이제 HistoryList가 클라이언트에서
+  // 한다(서버 왕복 네비게이션 대신 즉시 반응하는 URL 동기화 상태로). 여기선
+  // 정렬만 하고 전체를 넘긴다.
+  const history = [...settlementRows, ...adjustmentRows].sort((a, b) =>
+    b.createdAt.localeCompare(a.createdAt)
+  );
 
   // Donation ranking: total given / received per participant, from
   // donation-type settlements only (legacy "waiver" counts as donation too).
@@ -157,6 +145,10 @@ export default async function SettlementsPage({
           </div>
         ) : (
           <ul className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-4 tabular-nums">
+            {/* v2.19 (배치 C, PRD §24.13, 기능 수정) — 예전엔 `amount > 0`
+                하나로만 갈라서 잔액이 정확히 0인 사람이 빨간 "0"으로 표시
+                됐다(정산이 끝난 사람이 채무자처럼 보임). 3분기로 나눈다.
+                금액 접미사("점")도 이 화면만 빠져 있어 이력·랭킹과 맞춘다. */}
             {balanceList.map((b) => (
               <li
                 key={b.id}
@@ -165,11 +157,14 @@ export default async function SettlementsPage({
                 <span className="text-content">{b.name}</span>
                 <span
                   className={`font-semibold ${
-                    b.amount > 0 ? "text-emerald-400" : "text-lose"
+                    balanceVariant(b.amount) === "positive"
+                      ? "text-win"
+                      : balanceVariant(b.amount) === "negative"
+                      ? "text-lose"
+                      : "text-content-muted"
                   }`}
                 >
-                  {b.amount > 0 ? "+" : ""}
-                  {b.amount}
+                  {formatBalance(b.amount)}
                 </span>
               </li>
             ))}
@@ -195,7 +190,6 @@ export default async function SettlementsPage({
             <div className="flex gap-2">
               {DONATION_RANGE_OPTIONS.map((opt) => {
                 const params = new URLSearchParams();
-                if (filter !== "all") params.set("filter", filter);
                 if (opt.value !== "all") params.set("donationRange", opt.value);
                 const qs = params.toString();
                 return (
@@ -258,26 +252,7 @@ export default async function SettlementsPage({
       </Card>
 
       <Card>
-        <SectionTitle
-          description="기록 후 2시간이 지난 항목은 관리자만 취소할 수 있습니다."
-          action={
-            <div className="flex gap-2">
-              {FILTER_OPTIONS.map((opt) => (
-                <Link
-                  key={opt.value}
-                  href={
-                    opt.value === "all"
-                      ? "/settlements"
-                      : `/settlements?filter=${opt.value}`
-                  }
-                  className={filterChipClassName(filter === opt.value)}
-                >
-                  {opt.label}
-                </Link>
-              ))}
-            </div>
-          }
-        >
+        <SectionTitle description="기록 후 2시간이 지난 항목은 관리자만 취소할 수 있습니다.">
           정산 & 조정 이력 ({history.length}건)
         </SectionTitle>
         <div className="mt-3">
@@ -285,7 +260,6 @@ export default async function SettlementsPage({
             history={history}
             isAdmin={isAdmin}
             participants={participants.map((p) => ({ id: p.id, name: p.name }))}
-            filterActive={filter !== "all"}
           />
         </div>
       </Card>

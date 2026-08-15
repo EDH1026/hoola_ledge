@@ -11,7 +11,6 @@ import {
   CartesianGrid,
   ReferenceLine,
   ReferenceArea,
-  LabelList,
 } from "recharts";
 import { GAME_TYPE_LABELS, GAME_TYPES, GameResult } from "@/lib/types";
 import { TierBadge } from "@/components/badges";
@@ -22,6 +21,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/Button";
 import { useQueryParams } from "@/components/ui/useQueryParams";
 import { currentQuarterKey, formatQuarterKey } from "@/lib/time";
+import { buildParticipantColorMap, PARTICIPANT_COLOR_FALLBACK } from "@/lib/participant-colors";
 import {
   computeQuarterlyTiers,
   computeStyleMap,
@@ -175,6 +175,12 @@ export default function RecordsClient({
     return { ...p, x, y, clamped: x !== p.engagement || y !== p.performance };
   });
 
+  // v2.19 (배치 C, PRD §24.13) — 참가자별 고정 색. 예전엔 손익 부호로만
+  // 초록/빨강 2색을 썼는데, 그건 Y축(손익)과 같은 정보를 색으로 한 번 더
+  // 인코딩하는 중복이었다. 참가자 색으로 바꾸면 "누구인지"는 색으로,
+  // "손익"은 위치로 읽혀 정보량이 늘어난다.
+  const participantColorMap = useMemo(() => buildParticipantColorMap(participants), [participants]);
+
   // 명예의 전당은 항상 통산(전체 기간·전체 종목) 기준 — 필터를 타지 않는다.
   const records = useMemo(() => computeRecords(participants, games), [participants, games]);
 
@@ -226,7 +232,7 @@ export default function RecordsClient({
             }
           />
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
             {visibleTierRows.map((row) => (
               <TierCard key={row.id} row={row} />
             ))}
@@ -269,7 +275,7 @@ export default function RecordsClient({
             }
           />
         ) : (
-          <StyleMapChart points={styleMapPoints} />
+          <StyleMapChart points={styleMapPoints} colorMap={participantColorMap} />
         )}
 
         <p className="text-xs text-content-muted mt-4">
@@ -331,8 +337,8 @@ function TierCard({ row }: { row: TierRow }) {
 
   return (
     <Card padding="sm" className="space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-medium text-sm truncate text-content">{row.name}</span>
+      <div className="flex items-start justify-between gap-2">
+        <span className="font-medium text-sm text-content">{row.name}</span>
         <DeltaArrow delta={delta} />
       </div>
 
@@ -369,8 +375,15 @@ function TierCard({ row }: { row: TierRow }) {
 
 // PRD §16.8 — point radius/opacity scale with recent games so a 1-game point
 // reads as "small, unreliable" without needing a sample-size gate to hide it.
-const STYLE_MAP_MIN_RADIUS = 4;
-const STYLE_MAP_MAX_RADIUS = 13;
+// v2.19 (배치 C, PRD §24.13): the floors were 4px/35% opacity — a low-sample
+// point was both tiny and faint, close to untappable on a phone. Raised to
+// 7px/60% so even the least-sampled participant stays visible and tappable;
+// the *relative* size/opacity gradient (more games = bigger/more solid) is
+// unchanged, just the floor moved up.
+const STYLE_MAP_MIN_RADIUS = 7;
+const STYLE_MAP_MAX_RADIUS = 14;
+const STYLE_MAP_MIN_OPACITY = 0.6;
+const STYLE_MAP_MAX_OPACITY = 0.95;
 
 function styleMapRadius(games: number, maxGames: number): number {
   if (maxGames <= 1) return STYLE_MAP_MAX_RADIUS;
@@ -379,23 +392,24 @@ function styleMapRadius(games: number, maxGames: number): number {
 }
 
 function styleMapOpacity(games: number, maxGames: number): number {
-  if (maxGames <= 1) return 0.9;
+  if (maxGames <= 1) return STYLE_MAP_MAX_OPACITY;
   const t = Math.min(1, (games - 1) / (maxGames - 1));
-  return 0.35 + t * 0.55;
+  return STYLE_MAP_MIN_OPACITY + t * (STYLE_MAP_MAX_OPACITY - STYLE_MAP_MIN_OPACITY);
 }
 
-/** Custom <Scatter> dot: size/opacity encode `games`, a dashed ring marks a point clamped to the fixed domain edge (its true value lies outside what's shown). */
+/** Custom <Scatter> dot: color is the participant's fixed identity color (not win/lose — that's already the Y position, see the colorMap comment above), size/opacity encode `games`, a dashed ring marks a point clamped to the fixed domain edge (its true value lies outside what's shown). */
 function StyleMapDot(props: {
   cx?: number;
   cy?: number;
   payload?: StyleMapPlotPoint;
   maxGames: number;
+  colorMap: Map<string, string>;
 }) {
-  const { cx, cy, payload, maxGames } = props;
+  const { cx, cy, payload, maxGames, colorMap } = props;
   if (cx === undefined || cy === undefined || !payload) return null;
   const r = styleMapRadius(payload.games, maxGames);
   const opacity = styleMapOpacity(payload.games, maxGames);
-  const fill = payload.performance >= 0 ? "#059669" : "#dc2626";
+  const fill = colorMap.get(payload.id) ?? PARTICIPANT_COLOR_FALLBACK;
   return (
     <circle
       cx={cx}
@@ -431,14 +445,35 @@ function StyleMapTooltip({
   );
 }
 
-/** PRD §16.8 fixed-domain scatter — X=적극성(ENG), Y=손익(PERF), never auto-scales. */
-function StyleMapChart({ points }: { points: StyleMapPlotPoint[] }) {
+/**
+ * PRD §16.8 fixed-domain scatter — X=적극성(ENG), Y=손익(PERF), never auto-scales.
+ *
+ * v2.19 (배치 C, PRD §24.13) 조정:
+ *  - 이름 라벨(LabelList)을 제거했다. 도메인이 고정이라 값이 대부분 (1.0, 0)
+ *    근처에 몰리는데 충돌 회피 로직 없이 8명분 라벨이 겹쳤다. 대신 점 자체를
+ *    참가자 색으로 구분하고(다음 절), 정확한 이름·수치는 이미 있던
+ *    Tooltip으로 탭해서 본다 — "숨기고 탭 시 표시"로 가는 PRD의 대안을
+ *    그대로 쓴 것.
+ *  - 사분면 배경 fillOpacity 0.06→0.13(사실상 안 보이던 수준을 올림), 라벨
+ *    색을 승/패 색(빨강 쪽 3.7:1로 AA 미달) 대신 content-sub 계열
+ *    #cbd5e1(다크 배경 대비 ~11:1)로 통일.
+ *  - Y축 left 마진 10→32(‑1.6 틱 라벨 + 회전된 축 제목이 겹치던 문제),
+ *    bottom 마진 20→32(X축 제목이 SVG 가장자리에 붙던 문제).
+ *  - 높이 420px 고정(폰 화면 절반) → `min(420px, 55vh)`.
+ */
+function StyleMapChart({
+  points,
+  colorMap,
+}: {
+  points: StyleMapPlotPoint[];
+  colorMap: Map<string, string>;
+}) {
   const maxGames = points.reduce((max, p) => Math.max(max, p.games), 1);
 
   return (
-    <div style={{ width: "100%", height: 420 }}>
+    <div style={{ width: "100%", height: "min(420px, 55vh)" }}>
       <ResponsiveContainer>
-        <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 10 }}>
+        <ScatterChart margin={{ top: 20, right: 30, bottom: 32, left: 32 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
           <XAxis
             type="number"
@@ -447,7 +482,7 @@ function StyleMapChart({ points }: { points: StyleMapPlotPoint[] }) {
             ticks={STYLE_MAP_X_TICKS}
             allowDataOverflow
             tick={{ fontSize: 12, fill: "#94a3b8" }}
-            label={{ value: "적극성 (ENG)", position: "insideBottom", offset: -10, fontSize: 12, fill: "#94a3b8" }}
+            label={{ value: "적극성 (ENG, 1.00=기준)", position: "insideBottom", offset: -12, fontSize: 12, fill: "#94a3b8" }}
           />
           <YAxis
             type="number"
@@ -456,23 +491,25 @@ function StyleMapChart({ points }: { points: StyleMapPlotPoint[] }) {
             ticks={STYLE_MAP_Y_TICKS}
             allowDataOverflow
             tick={{ fontSize: 12, fill: "#94a3b8" }}
-            label={{ value: "손익 (PERF)", angle: -90, position: "insideLeft", fontSize: 12, fill: "#94a3b8" }}
+            label={{ value: "손익 (PERF, 0=본전)", angle: -90, position: "insideLeft", fontSize: 12, fill: "#94a3b8" }}
           />
-          <ReferenceArea x1={1.0} x2={STYLE_MAP_X_DOMAIN[1]} y1={0} y2={STYLE_MAP_Y_DOMAIN[1]} fill="#059669" fillOpacity={0.06} label={{ value: "승부사", position: "insideTopRight", fontSize: 11, fill: "#059669" }} />
-          <ReferenceArea x1={1.0} x2={STYLE_MAP_X_DOMAIN[1]} y1={STYLE_MAP_Y_DOMAIN[0]} y2={0} fill="#dc2626" fillOpacity={0.06} label={{ value: "불나방", position: "insideBottomRight", fontSize: 11, fill: "#dc2626" }} />
-          <ReferenceArea x1={STYLE_MAP_X_DOMAIN[0]} x2={1.0} y1={0} y2={STYLE_MAP_Y_DOMAIN[1]} fill="#059669" fillOpacity={0.06} label={{ value: "실속파", position: "insideTopLeft", fontSize: 11, fill: "#059669" }} />
-          <ReferenceArea x1={STYLE_MAP_X_DOMAIN[0]} x2={1.0} y1={STYLE_MAP_Y_DOMAIN[0]} y2={0} fill="#dc2626" fillOpacity={0.06} label={{ value: "조공러", position: "insideBottomLeft", fontSize: 11, fill: "#dc2626" }} />
+          <ReferenceArea x1={1.0} x2={STYLE_MAP_X_DOMAIN[1]} y1={0} y2={STYLE_MAP_Y_DOMAIN[1]} fill="#059669" fillOpacity={0.13} label={{ value: "승부사", position: "insideTopRight", fontSize: 12, fill: "#cbd5e1" }} />
+          <ReferenceArea x1={1.0} x2={STYLE_MAP_X_DOMAIN[1]} y1={STYLE_MAP_Y_DOMAIN[0]} y2={0} fill="#dc2626" fillOpacity={0.13} label={{ value: "불나방", position: "insideBottomRight", fontSize: 12, fill: "#cbd5e1" }} />
+          <ReferenceArea x1={STYLE_MAP_X_DOMAIN[0]} x2={1.0} y1={0} y2={STYLE_MAP_Y_DOMAIN[1]} fill="#059669" fillOpacity={0.13} label={{ value: "실속파", position: "insideTopLeft", fontSize: 12, fill: "#cbd5e1" }} />
+          <ReferenceArea x1={STYLE_MAP_X_DOMAIN[0]} x2={1.0} y1={STYLE_MAP_Y_DOMAIN[0]} y2={0} fill="#dc2626" fillOpacity={0.13} label={{ value: "조공러", position: "insideBottomLeft", fontSize: 12, fill: "#cbd5e1" }} />
           <ReferenceLine x={1.0} stroke="#cbd5e1" />
           <ReferenceLine y={0} stroke="#cbd5e1" />
           <Tooltip content={<StyleMapTooltip />} />
           <Scatter
             data={points}
             shape={(props: unknown) => (
-              <StyleMapDot {...(props as { cx?: number; cy?: number; payload?: StyleMapPlotPoint })} maxGames={maxGames} />
+              <StyleMapDot
+                {...(props as { cx?: number; cy?: number; payload?: StyleMapPlotPoint })}
+                maxGames={maxGames}
+                colorMap={colorMap}
+              />
             )}
-          >
-            <LabelList dataKey="name" position="top" style={{ fontSize: 10, fill: "#cbd5e1" }} />
-          </Scatter>
+          />
         </ScatterChart>
       </ResponsiveContainer>
     </div>
@@ -541,15 +578,29 @@ function RecordCategory({
       {tiers.length === 0 ? (
         <EmptyState title="아직 없음" />
       ) : (
-        <ul className="space-y-1 tabular-nums">
+        <ul className="space-y-1.5 tabular-nums">
           {tiers.map((tier) => (
             <li key={tier.rank} className="text-sm">
               <span className="text-content-faint mr-1.5 whitespace-nowrap">
                 {tier.entries.length > 1 ? `공동 ${tier.rank}위` : `${tier.rank}위`}
               </span>
-              <span className="font-semibold text-content">
-                {tier.entries.map((e) => formatRecordEntry(e, unit, signed)).join(", ")}
-              </span>
+              {tier.entries.length === 1 ? (
+                <span className="font-semibold text-content">
+                  {formatRecordEntry(tier.entries[0], unit, signed)}
+                </span>
+              ) : (
+                // v2.19 (배치 C, PRD §24.13) — 공동 순위 값을 join(", ")로
+                // 한 줄에 이어붙이면 값 문자열이 길 때(예: "이름 · 5연승
+                // (2026-01-02 ~ 2026-01-09)") 줄바꿈이 단어 중간에서
+                // 일어난다. 각 값을 별도 줄로 나눈다.
+                <ul className="mt-0.5 ml-14 space-y-0.5">
+                  {tier.entries.map((e, i) => (
+                    <li key={i} className="font-semibold text-content">
+                      {formatRecordEntry(e, unit, signed)}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </li>
           ))}
         </ul>

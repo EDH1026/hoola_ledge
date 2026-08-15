@@ -10,11 +10,10 @@ import {
   GameTypeFilter,
 } from "@/lib/stats";
 import { simplifiedSettlements } from "@/lib/settle";
-import { activeGames, withinDayKey } from "@/lib/games";
+import { activeGames, withinDayKey, computeDailySequenceNumbers } from "@/lib/games";
 import { currentQuarterKey, formatQuarterKey, gameWallClock } from "@/lib/time";
-import { format } from "date-fns";
 import { GAME_TYPE_LABELS, GAME_TYPES } from "@/lib/types";
-import { GameTypeBadge, ResultBadge, StreakBadge, TierBadge } from "@/components/badges";
+import { GameTypeBadge, GameNightBadge, ResultBadge, StreakBadge, TierBadge } from "@/components/badges";
 import { Card } from "@/components/ui/Card";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -24,6 +23,16 @@ export const dynamic = "force-dynamic";
 
 function nameOf(map: Map<string, string>, id: string) {
   return map.get(id) ?? "(알 수 없음)";
+}
+
+const WEEKDAY_LABELS_KO = ["일", "월", "화", "수", "목", "금", "토"];
+
+// v2.19 (배치 C, PRD §24.5) — GamesListClient의 날짜 그룹 헤더와 같은
+// 표기를 여기서도 쓴다(공유 위치가 아니라 로컬 복제인 이유는 그쪽 주석
+// 참고 — UTC 자정 파싱을 이용해 보는 사람 타임존과 무관하게 요일이
+// 고정되게 한다).
+function formatDateWithWeekday(date: string): string {
+  return `${date} (${WEEKDAY_LABELS_KO[new Date(date).getUTCDay()]})`;
 }
 
 export default async function DashboardPage() {
@@ -46,6 +55,8 @@ export default async function DashboardPage() {
   const recentGames = gamesActive
     .filter((g) => g.date === mostRecentGameDate)
     .sort((a, b) => withinDayKey(b).localeCompare(withinDayKey(a)));
+  // 전체 게임 기준으로 계산해야 /games의 N차전 번호와 항상 일치한다(§24.5).
+  const sequenceNumbers = computeDailySequenceNumbers(db.games);
   const transactions = simplifiedSettlements(db.games, db.settlements, db.adjustments);
 
   const recentDays = computeRecentGameDaysSummary(db.participants, db.games);
@@ -328,37 +339,51 @@ export default async function DashboardPage() {
       </Card>
 
       <Card>
-        <SectionTitle>최근 게임</SectionTitle>
+        {/* v2.19 (배치 C, PRD §24.5) — 이 섹션은 이미 하루치(가장 최근
+            게임일)만 보여주므로, 행마다 날짜를 반복하는 대신 그 하나뿐인
+            날짜를 섹션 제목에 올린다(§24.5가 /games에 요구하는 "날짜
+            그룹 헤더"의 축약형). */}
+        <SectionTitle description={mostRecentGameDate ? formatDateWithWeekday(mostRecentGameDate) : undefined}>
+          최근 게임
+        </SectionTitle>
         {recentGames.length === 0 ? (
           <EmptyState title="아직 기록된 게임이 없습니다." />
         ) : (
           <ul className="divide-y divide-line mt-2">
             {recentGames.map((g) => {
-              // v2.18 (PRD §22) — show the real calendar date this game was
-              // played on, not the business-day group key it's filed under.
+              const seq = sequenceNumbers.get(g.id);
               const wallClock = gameWallClock(g.date, g.time);
               return (
-                <li
-                  key={g.id}
-                  className="py-2.5 flex flex-wrap items-center justify-between gap-2 text-sm"
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="text-content-muted tabular-nums">
-                      {format(new Date(wallClock.date), "yyyy-MM-dd")}
+                <li key={g.id} className="py-2.5 space-y-1 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <GameTypeBadge gameType={g.gameType} />
+                      {wallClock.crossedMidnight && (
+                        <GameNightBadge businessDate={wallClock.businessDate} />
+                      )}
+                      <span className="text-content-muted text-xs tabular-nums">
+                        {seq ? `${seq}차전` : ""}
+                        {g.time ? ` · ${g.time}` : ""}
+                      </span>
+                    </div>
+                    <span className="text-content-muted text-xs tabular-nums">
+                      참가 {g.attendeeIds.length}명
                     </span>
-                    <GameTypeBadge gameType={g.gameType} />
-                  </span>
-                  <span className="tabular-nums">
-                    <span className="text-emerald-400 font-medium">
-                      {nameOf(nameMap, g.winnerId)}
+                  </div>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="tabular-nums">
+                      <span className="text-emerald-400 font-medium">
+                        {nameOf(nameMap, g.winnerId)}
+                      </span>
+                      <span className="text-content-muted mx-1.5">→</span>
+                      <span className="text-lose font-medium">
+                        {nameOf(nameMap, g.loserId)}
+                      </span>
                     </span>
-                    <span className="text-content-muted mx-1">Win · Lose</span>
-                    <span className="text-lose font-medium">
-                      {nameOf(nameMap, g.loserId)}
+                    <span className="text-base font-semibold text-content tabular-nums shrink-0">
+                      {g.points ?? 1}점
                     </span>
-                    <span className="text-content-muted ml-1">· {g.points ?? 1}점</span>
-                  </span>
-                  <span className="text-content-muted tabular-nums">참가 {g.attendeeIds.length}명</span>
+                  </div>
                 </li>
               );
             })}
