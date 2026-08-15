@@ -7,16 +7,15 @@ import {
   computeCurrentStreaks,
   computeRecentGameDaysSummary,
   computeQuarterlyTiers,
-  computeGameNightBoard,
+  computeGameDayBoard,
   GameTypeFilter,
 } from "@/lib/stats";
 import { simplifiedSettlements } from "@/lib/settle";
-import { activeGames, withinDayKey, computeDailySequenceNumbers } from "@/lib/games";
-import { currentQuarterKey, formatQuarterKey, gameWallClock, todayInSeoul } from "@/lib/time";
+import { activeGames } from "@/lib/games";
+import { currentQuarterKey, formatQuarterKey, nowInSeoul, todayInSeoul } from "@/lib/time";
 import { GAME_TYPE_LABELS, GAME_TYPES } from "@/lib/types";
-import { GameTypeBadge, GameNightBadge, ResultBadge, StreakBadge, TierBadge } from "@/components/badges";
-import { GameNightBoardCard } from "@/components/GameNightBoard";
-import { GameNightRefresher } from "@/components/GameNightRefresher";
+import { ResultBadge, StreakBadge, TierBadge } from "@/components/badges";
+import { RecentGameDayCard } from "@/components/RecentGameDayCard";
 import { Card } from "@/components/ui/Card";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -28,46 +27,28 @@ function nameOf(map: Map<string, string>, id: string) {
   return map.get(id) ?? "(알 수 없음)";
 }
 
-const WEEKDAY_LABELS_KO = ["일", "월", "화", "수", "목", "금", "토"];
-
-// v2.19 (배치 C, PRD §24.5) — GamesListClient의 날짜 그룹 헤더와 같은
-// 표기를 여기서도 쓴다(공유 위치가 아니라 로컬 복제인 이유는 그쪽 주석
-// 참고 — UTC 자정 파싱을 이용해 보는 사람 타임존과 무관하게 요일이
-// 고정되게 한다).
-function formatDateWithWeekday(date: string): string {
-  return `${date} (${WEEKDAY_LABELS_KO[new Date(date).getUTCDay()]})`;
-}
-
 export default async function DashboardPage() {
   const db = await getFullDB();
   const nameMap = new Map(db.participants.map((p) => [p.id, p.name]));
   const gamesActive = activeGames(db.games);
-  // v2.20 (PRD §26) — todayInSeoul()은 v2.16부터 영업일(06:00 경계) 기준이라
-  // 05:50에 열면 아직 어젯밤, 06:05에 열면 새 날이다 — 의도된 동작이므로
-  // nowInSeoul()로 바꾸지 않는다. 게임이 없는 날은 null이라 보드 자체를
-  // 렌더하지 않는다(빈 카드도 두지 않음 — §26.2).
-  const gameNightBoard = computeGameNightBoard(db.participants, db.games, todayInSeoul());
+  const today = todayInSeoul();
+  // v2.21 (PRD §28.2) — 대상 경기일이 "오늘"이 아니라 "활성 게임이 있는
+  // 가장 최근 영업일"이라, 게임이 한 판이라도 기록돼 있으면 카드가 항상
+  // 나타난다(v2.20은 오늘 게임이 없으면 통째로 사라졌다). null은 활성
+  // 게임이 정말 하나도 없을 때뿐이다.
+  const gameDayBoard = computeGameDayBoard(db.participants, db.games, today);
+  // 서버에서 미리 포맷 — 클라이언트에서 new Date()로 만들면 hydration
+  // 불일치가 나고, 이 앱은 Asia/Seoul 고정 표기라 서버 포맷이 정답이다.
+  const updatedAtLabel = nowInSeoul().time;
   const stats = computeParticipantStats(db.participants, db.games);
   // 전원 표시 — 예전엔 상위 5명만 잘라 보여줬는데, 참가자가 많지 않은
   // 그룹이라 전원을 한눈에 보는 게 더 유용하다는 요청으로 상한을 없앴다.
   // computeParticipantStats가 이미 netPoints 내림차순으로 반환하므로 별도
   // 정렬은 필요 없다.
   const rankedStats = stats.filter((s) => s.appearances > 0);
-  // 최근 게임 = "최근 N건"이 아니라 가장 최근 게임이 있었던 영업일 하루의
-  // 기록 전체. 그 날 몇 판을 쳤든 전부 보여준다. withinDayKey로 정렬해
-  // 자정을 넘겨 이어진 게임 밤도 실제 진행 순서(최신 순)를 유지한다.
-  const mostRecentGameDate = gamesActive.reduce(
-    (latest, g) => (g.date > latest ? g.date : latest),
-    ""
-  );
-  const recentGames = gamesActive
-    .filter((g) => g.date === mostRecentGameDate)
-    .sort((a, b) => withinDayKey(b).localeCompare(withinDayKey(a)));
-  // 전체 게임 기준으로 계산해야 /games의 N차전 번호와 항상 일치한다(§24.5).
-  const sequenceNumbers = computeDailySequenceNumbers(db.games);
   const transactions = simplifiedSettlements(db.games, db.settlements, db.adjustments);
 
-  const recentDays = computeRecentGameDaysSummary(db.participants, db.games);
+  const recentDays = computeRecentGameDaysSummary(db.participants, db.games, today);
   const { hot, cold } = computeHotColdPlayers(db.participants, db.games);
 
   // v2.16 — 통합 + 종목별(훌라/시타델/젝스님트) 이번 분기 티어 상위 3명씩
@@ -92,8 +73,9 @@ export default async function DashboardPage() {
     };
   });
   const activeParticipants = db.participants.filter((p) => p.active);
+  // v2.21 (PRD §28.8) — 표본 5게임 -> 10게임.
   const formById = new Map(
-    computeRecentForm(activeParticipants, db.games, 5).map((f) => [f.id, f])
+    computeRecentForm(activeParticipants, db.games, 10).map((f) => [f.id, f])
   );
   const streakById = new Map(
     computeCurrentStreaks(activeParticipants, db.games).map((s) => [s.id, s])
@@ -116,84 +98,13 @@ export default async function DashboardPage() {
         </Link>
       </div>
 
-      {gameNightBoard && (
-        <>
-          <GameNightBoardCard board={gameNightBoard} />
-          <GameNightRefresher />
-        </>
-      )}
+      {/* 1. 최근 경기일 — §28.2, v2.20 게임밤 보드 개편 + "최근 게임" 카드 흡수 */}
+      {gameDayBoard && <RecentGameDayCard board={gameDayBoard} updatedAtLabel={updatedAtLabel} />}
 
-      <div className="rounded-xl bg-surface-raised border border-line px-4 py-3 text-sm space-y-2">
-        <span className="font-semibold text-content">최근 경기일 요약</span>
-        {recentDays.length === 0 ? (
-          <p className="text-content-muted">아직 기록된 게임이 없습니다.</p>
-        ) : (
-          <ul className="space-y-1 tabular-nums">
-            {recentDays.map((d) => (
-              <li
-                key={d.date}
-                className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-content-muted"
-              >
-                <span className="text-content font-medium">{d.date}</span>
-                <span>{d.gameCount}게임</span>
-                {d.topWinners.length > 0 && (
-                  <>
-                    <span className="text-content-faint">·</span>
-                    <span>
-                      최다 승자{" "}
-                      <span className="text-content font-medium">
-                        {d.topWinners.map((w) => w.name).join(", ")}
-                      </span>{" "}
-                      (득실차 {d.margin > 0 ? "+" : ""}
-                      {d.margin})
-                    </span>
-                  </>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <Card>
-        <SectionTitle
-          action={
-            <Link href="/records" className="text-xs text-content-muted hover:underline">
-              통산기록 전체 보기 →
-            </Link>
-          }
-        >
-          이번 분기 티어 (통합 · 종목별)
-        </SectionTitle>
-        <div className="grid gap-4 sm:grid-cols-2 mt-3">
-          {tierBlocks.map((block) => (
-            <div key={block.gameType}>
-              <p className="text-xs font-medium text-content-muted mb-2">
-                {block.label}
-                {block.quarter ? ` · ${formatQuarterKey(block.quarter)}` : ""}
-              </p>
-              {block.top3.length === 0 ? (
-                <EmptyState title="아직 배치를 완료한 참가자가 없습니다." />
-              ) : (
-                <ul className="space-y-1.5 tabular-nums">
-                  {block.top3.map((row, i) => (
-                    <li key={row.id} className="flex items-center gap-2 text-sm">
-                      <span className="w-4 text-content-faint">{i + 1}</span>
-                      <span className="font-medium text-content">{row.name}</span>
-                      <TierBadge tier={row.tier} size="sm" />
-                      <span className="text-content-muted">{Math.round(row.tr)} TR</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ))}
-        </div>
-      </Card>
-
+      {/* 2·3. 순위 / 정리된 채권-채무 관계 */}
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
-          <SectionTitle description="게임 승/무/패 기준 — 과거 누적기록(조정)은 반영되지 않습니다.">
+          <SectionTitle description="게임 승/무/패 기준 — 앱 사용 이전 기록은 반영되지 않습니다.">
             순위 (누적 점수)
           </SectionTitle>
           {rankedStats.length === 0 ? (
@@ -268,9 +179,84 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
+      {/* 4. 최근 경기일 요약 — §28.7, 최근 7일 이내 전부(3개 상한 제거) */}
+      <Card>
+        <SectionTitle description="최근 7일 이내에 게임이 있었던 날">
+          최근 경기일 요약
+        </SectionTitle>
+        {recentDays.length === 0 ? (
+          <EmptyState title="최근 7일 이내에 기록된 게임이 없습니다." />
+        ) : (
+          <ul className="space-y-1 mt-3 tabular-nums">
+            {recentDays.map((d) => (
+              <li
+                key={d.date}
+                className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-content-muted"
+              >
+                <span className="text-content font-medium">{d.date}</span>
+                <span>{d.gameCount}게임</span>
+                {d.topWinners.length > 0 && (
+                  <>
+                    <span className="text-content-faint">·</span>
+                    <span>
+                      최다 승자{" "}
+                      <span className="text-content font-medium">
+                        {d.topWinners.map((w) => w.name).join(", ")}
+                      </span>{" "}
+                      (득실차 {d.margin > 0 ? "+" : ""}
+                      {d.margin})
+                    </span>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      {/* 5. 최근 폼 & 스트릭 — §28.8, 5게임 -> 10게임 */}
+      <Card>
+        <SectionTitle>최근 폼 & 스트릭</SectionTitle>
+        {formRows.length === 0 ? (
+          <EmptyState title="아직 기록된 게임이 없습니다." />
+        ) : (
+          <ul className="divide-y divide-line mt-2">
+            {formRows.map((s) => {
+              const form = formById.get(s.id);
+              const streak = streakById.get(s.id);
+              return (
+                <li key={s.id} className="py-2.5 space-y-1.5 text-sm">
+                  <span className="font-medium text-content">{s.name}</span>
+                  {/* v2.21 — 뱃지 10개 + StreakBadge가 이름과 한 줄에 있으면
+                      390px에서 폭이 빠듯하다(ResultBadge 20px * 10 +
+                      gap-1 = 236px + 이름 + StreakBadge). 뱃지 줄을 이름
+                      아래 자기 줄로 내려 확실히 여유를 둔다. */}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="flex items-center gap-1">
+                      {form?.results.length ? (
+                        [...form.results].reverse().map((r, i) => (
+                          <ResultBadge key={i} result={r} />
+                        ))
+                      ) : (
+                        <span className="text-xs text-content-muted">-</span>
+                      )}
+                    </span>
+                    <StreakBadge type={streak?.type ?? null} length={streak?.length ?? 0} />
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <p className="text-xs text-content-muted mt-3">
+          최근 폼은 왼쪽이 과거, 오른쪽이 가장 최근 게임입니다 (최근 10게임).
+        </p>
+      </Card>
+
+      {/* 6. 핫 / 콜드 플레이어 */}
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
-          <SectionTitle description="최근 14일간 3경기 이상 치른 참가자 중 통산 승률보다 최근 승률이 높은 순">
+          <SectionTitle description="최근 14일간 3게임 이상 치른 참가자 중 통산 승률보다 최근 승률이 높은 순">
             핫 플레이어
           </SectionTitle>
           {hot.length === 0 ? (
@@ -293,7 +279,7 @@ export default async function DashboardPage() {
         </Card>
 
         <Card>
-          <SectionTitle description="최근 14일간 3경기 이상 치른 참가자 중 통산 승률보다 최근 승률이 낮은 순">
+          <SectionTitle description="최근 14일간 3게임 이상 치른 참가자 중 통산 승률보다 최근 승률이 낮은 순">
             콜드 플레이어
           </SectionTitle>
           {cold.length === 0 ? (
@@ -316,101 +302,41 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
+      {/* 7. 이번 분기 티어 — 최상단에서 최하단으로 이동(§28.5) */}
       <Card>
-        <SectionTitle>최근 폼 & 스트릭</SectionTitle>
-        {formRows.length === 0 ? (
-          <EmptyState title="아직 기록된 게임이 없습니다." />
-        ) : (
-          <ul className="divide-y divide-line mt-2">
-            {formRows.map((s) => {
-              const form = formById.get(s.id);
-              const streak = streakById.get(s.id);
-              return (
-                <li
-                  key={s.id}
-                  className="py-2.5 flex flex-wrap items-center justify-between gap-2 text-sm"
-                >
-                  <span className="font-medium text-content">{s.name}</span>
-                  <span className="flex items-center gap-3">
-                    <span className="flex items-center gap-1">
-                      {form?.results.length ? (
-                        [...form.results].reverse().map((r, i) => (
-                          <ResultBadge key={i} result={r} />
-                        ))
-                      ) : (
-                        <span className="text-xs text-content-muted">-</span>
-                      )}
-                    </span>
-                    <StreakBadge type={streak?.type ?? null} length={streak?.length ?? 0} />
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        <p className="text-xs text-content-muted mt-3">
-          최근 폼은 왼쪽이 과거, 오른쪽이 가장 최근 경기입니다 (최근 5경기).
-        </p>
-      </Card>
-
-      <Card>
-        {/* v2.19 (배치 C, PRD §24.5) — 이 섹션은 이미 하루치(가장 최근
-            게임일)만 보여주므로, 행마다 날짜를 반복하는 대신 그 하나뿐인
-            날짜를 섹션 제목에 올린다(§24.5가 /games에 요구하는 "날짜
-            그룹 헤더"의 축약형). */}
-        <SectionTitle description={mostRecentGameDate ? formatDateWithWeekday(mostRecentGameDate) : undefined}>
-          최근 게임
-        </SectionTitle>
-        {recentGames.length === 0 ? (
-          <EmptyState title="아직 기록된 게임이 없습니다." />
-        ) : (
-          <ul className="divide-y divide-line mt-2">
-            {recentGames.map((g) => {
-              const seq = sequenceNumbers.get(g.id);
-              const wallClock = gameWallClock(g.date, g.time);
-              return (
-                <li key={g.id} className="py-2.5 space-y-1 text-sm">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <GameTypeBadge gameType={g.gameType} />
-                      {wallClock.crossedMidnight && (
-                        <GameNightBadge businessDate={wallClock.businessDate} />
-                      )}
-                      <span className="text-content-muted text-xs tabular-nums">
-                        {seq ? `${seq}차전` : ""}
-                        {g.time ? ` · ${g.time}` : ""}
-                      </span>
-                    </div>
-                    <span className="text-content-muted text-xs tabular-nums">
-                      참가 {g.attendeeIds.length}명
-                    </span>
-                  </div>
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="tabular-nums">
-                      {/* 화살표는 점수가 흐르는 방향(패자 -> 승자)을 가리킨다. */}
-                      <span className="text-lose font-medium">
-                        {nameOf(nameMap, g.loserId)}
-                      </span>
-                      <span className="text-content-muted mx-1.5">→</span>
-                      <span className="text-emerald-400 font-medium">
-                        {nameOf(nameMap, g.winnerId)}
-                      </span>
-                    </span>
-                    <span className="text-base font-semibold text-content tabular-nums shrink-0">
-                      {g.points ?? 1}점
-                    </span>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        <Link
-          href="/games"
-          className="inline-block mt-4 text-xs text-content-muted hover:underline"
+        <SectionTitle
+          action={
+            <Link href="/records" className="text-xs text-content-muted hover:underline">
+              통산기록 전체 보기 →
+            </Link>
+          }
         >
-          전체 게임 목록 →
-        </Link>
+          이번 분기 티어 (통합 · 종목별)
+        </SectionTitle>
+        <div className="grid gap-4 sm:grid-cols-2 mt-3">
+          {tierBlocks.map((block) => (
+            <div key={block.gameType}>
+              <p className="text-xs font-medium text-content-muted mb-2">
+                {block.label}
+                {block.quarter ? ` · ${formatQuarterKey(block.quarter)}` : ""}
+              </p>
+              {block.top3.length === 0 ? (
+                <EmptyState title="아직 배치를 완료한 참가자가 없습니다." />
+              ) : (
+                <ul className="space-y-1.5 tabular-nums">
+                  {block.top3.map((row, i) => (
+                    <li key={row.id} className="flex items-center gap-2 text-sm">
+                      <span className="w-4 text-content-faint">{i + 1}</span>
+                      <span className="font-medium text-content">{row.name}</span>
+                      <TierBadge tier={row.tier} size="sm" />
+                      <span className="text-content-muted">{Math.round(row.tr)} TR</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
       </Card>
     </div>
   );

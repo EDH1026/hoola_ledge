@@ -316,19 +316,14 @@ export default function RecordsClient({
             unit="패"
           />
           <RecordCategory
-            label="최다 참석 (개근왕)"
-            tiers={records.mostAppearances}
-            unit="회"
-          />
-          <RecordCategory
-            label="최고 순득점"
-            tiers={records.highestNetPoints}
+            label="하루 최고 득실차"
+            tiers={records.bestDailyMargin}
             unit="점"
             signed
           />
           <RecordCategory
-            label="최저 순득점"
-            tiers={records.lowestNetPoints}
+            label="하루 최저 득실차"
+            tiers={records.worstDailyMargin}
             unit="점"
             signed
           />
@@ -336,6 +331,11 @@ export default function RecordsClient({
             label="하루 최다 게임수 (팀 기록)"
             tiers={records.mostGamesInOneDay}
             unit="게임"
+          />
+          <RecordCategory
+            label="최다 참석 (개근왕)"
+            tiers={records.mostAppearances}
+            unit="회"
           />
           <RecordCategory
             label="역대 최고 채권 보유"

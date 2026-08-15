@@ -11,11 +11,18 @@ import {
   gameWallClock,
   isWithinEditWindow,
   minutesSinceBusinessDayStart,
+  quarterKeyOf,
   seoulLocalToUtcIso,
 } from "../src/lib/time";
 import { withinDayKey } from "../src/lib/games";
 import { planBusinessDayBackfill } from "../src/lib/backfill";
-import { computeGameNightBoard, ParticipantLike } from "../src/lib/stats";
+import {
+  computeGameDayBoard,
+  computeRecentGameDaysSummary,
+  computeCumulativeNetPointsTrend,
+  computeRecords,
+  ParticipantLike,
+} from "../src/lib/stats";
 import { GameResult, GameType } from "../src/lib/types";
 
 function assert(cond: boolean, msg: string) {
@@ -300,10 +307,11 @@ for (const createdAt of [
   );
 }
 
-// v2.20 (PRD §26) — computeGameNightBoard. This is the function most
-// dependent on the business-day rules above (withinDayKey ordering, active
-// filtering), which is why its tests live in this file rather than in a
-// stats-specific script.
+// v2.21 (PRD §28) — computeGameDayBoard/computeRecentGameDaysSummary/
+// computeCumulativeNetPointsTrend. These are the functions most dependent on
+// the business-day rules above (withinDayKey ordering, active filtering,
+// quarterKeyOf string-safe bucketing), which is why their tests live in this
+// file rather than in a stats-specific script.
 function mkGame(opts: {
   id: string;
   date: string;
@@ -330,30 +338,94 @@ function mkGame(opts: {
   };
 }
 
-// Case 1: not a game night — no active game on that business date -> null.
+// Case 1: null only when there is truly zero active games, ever — not
+// merely "none today." A past-only game must NOT return null (v2.20's
+// computeGameNightBoard returned null whenever `today` itself had no games;
+// v2.21's computeGameDayBoard targets "the latest date with games" instead).
 {
   const participants: ParticipantLike[] = [{ id: "A", name: "A", active: true }];
-  const games: GameResult[] = [
-    mkGame({
-      id: "g0",
-      date: "2026-08-13", // a different business date
-      time: "20:00",
-      createdAt: "2026-08-13T11:00:00.000Z",
-      attendeeIds: ["A", "B"],
-      winnerId: "A",
-      loserId: "B",
-    }),
-  ];
-  const board = computeGameNightBoard(participants, games, "2026-08-14");
-  assert(board === null, "case1 (게임 밤 아님): no active game on the target business date must return null");
+  const boardEmpty = computeGameDayBoard(participants, [], "2026-08-16");
+  assert(boardEmpty === null, "case1a (활성 게임 0판): no games at all -> null");
+
+  const pastGame = mkGame({
+    id: "gpast",
+    date: "2026-08-10",
+    time: "20:00",
+    createdAt: "2026-08-10T11:00:00.000Z",
+    attendeeIds: ["A", "B"],
+    winnerId: "A",
+    loserId: "B",
+  });
+  const boardPastOnly = computeGameDayBoard(participants, [pastGame], "2026-08-16");
+  assert(
+    boardPastOnly !== null,
+    "case1b: a past game (even with none today) must NOT return null — only zero active games ever does"
+  );
 }
 
-// Case 2: midnight crossing — a 22:00 game and a 01:00 game both filed under
-// the same business date (2026-08-14) must both appear on the same board,
-// and latestGame must be the 01:00 one — proving withinDayKey (not
-// createdAt, and not a raw "HH:mm" string compare) governs ordering. The
-// 22:00 game is deliberately given a LATER createdAt than the 01:00 game, so
-// a createdAt-based (or naive string) sort would get this backwards.
+// Case 2: target business day selection — with games on both 8/10 and 8/14
+// and today=8/16, the board must target the latest date that actually has
+// games (8/14), with status "closed" since that's before today.
+{
+  const participants: ParticipantLike[] = [
+    { id: "A", name: "A", active: true },
+    { id: "B", name: "B", active: true },
+  ];
+  const g10 = mkGame({
+    id: "g0810",
+    date: "2026-08-10",
+    time: "20:00",
+    createdAt: "2026-08-10T11:00:00.000Z",
+    attendeeIds: ["A", "B"],
+    winnerId: "A",
+    loserId: "B",
+  });
+  const g14 = mkGame({
+    id: "g0814",
+    date: "2026-08-14",
+    time: "20:00",
+    createdAt: "2026-08-14T11:00:00.000Z",
+    attendeeIds: ["A", "B"],
+    winnerId: "B",
+    loserId: "A",
+  });
+  const board = computeGameDayBoard(participants, [g10, g14], "2026-08-16");
+  assert(
+    board?.date === "2026-08-14",
+    `case2 (대상 영업일 선택): should target the latest date with games (2026-08-14), got ${board?.date}`
+  );
+  assert(
+    board?.status === "closed",
+    `case2: target date (8/14) != today (8/16) -> status must be closed, got ${board?.status}`
+  );
+}
+
+// Case 3: status "live" when the target date equals today.
+{
+  const participants: ParticipantLike[] = [
+    { id: "A", name: "A", active: true },
+    { id: "B", name: "B", active: true },
+  ];
+  const g = mkGame({
+    id: "glive",
+    date: "2026-08-16",
+    time: "20:00",
+    createdAt: "2026-08-16T11:00:00.000Z",
+    attendeeIds: ["A", "B"],
+    winnerId: "A",
+    loserId: "B",
+  });
+  const board = computeGameDayBoard(participants, [g], "2026-08-16");
+  assert(board?.status === "live", `case3 (진행 중): target date === today -> live, got ${board?.status}`);
+}
+
+// Case 4: midnight crossing — a 22:00 game and a 01:00 game both filed under
+// the same business date (2026-08-14) must both appear in `games`, sorted
+// most-recent-first (withinDayKey descending), with games[0] being the
+// 01:00 one — proving withinDayKey (not createdAt, and not a raw "HH:mm"
+// string compare) governs ordering. The 22:00 game is deliberately given a
+// LATER createdAt than the 01:00 game, so a createdAt-based (or naive
+// string) sort would get this backwards.
 {
   const participants: ParticipantLike[] = [
     { id: "A", name: "A", active: true },
@@ -377,16 +449,21 @@ function mkGame(opts: {
     winnerId: "B",
     loserId: "A",
   });
-  const board = computeGameNightBoard(participants, [evening, lateNight], "2026-08-14");
-  assert(board !== null, "case2 (자정 교차): board must exist");
-  assert(board?.totalGames === 2, `case2: both games should count toward the same board, got ${board?.totalGames}`);
+  const board = computeGameDayBoard(participants, [evening, lateNight], "2026-08-14");
+  assert(board !== null, "case4 (자정 교차): board must exist");
+  assert(board?.totalGames === 2, `case4: both games should count toward the same board, got ${board?.totalGames}`);
+  assert(board?.games.length === 2, `case4: games[] should hold both, got ${board?.games.length}`);
   assert(
-    board?.latestGame?.id === "g-latenight",
-    `case2: latestGame must be the 01:00 game (withinDayKey order), got ${board?.latestGame?.id}`
+    board?.games[0]?.game.id === "g-latenight",
+    `case4: games[0] (most recent first) must be the 01:00 game, got ${board?.games[0]?.game.id}`
+  );
+  assert(
+    board?.games[1]?.game.id === "g-evening",
+    `case4: games[1] must be the 22:00 game, got ${board?.games[1]?.game.id}`
   );
 }
 
-// Case 3: attendees with no decisive game yet still appear as 0승0패.
+// Case 5: attendees with no decisive game yet still appear as 0승0패.
 {
   const participants: ParticipantLike[] = [
     { id: "A", name: "A", active: true },
@@ -404,22 +481,22 @@ function mkGame(opts: {
       loserId: "B",
     }),
   ];
-  const board = computeGameNightBoard(participants, games, "2026-08-14");
+  const board = computeGameDayBoard(participants, games, "2026-08-14");
   const rowC = board?.rows.find((r) => r.id === "C");
-  assert(rowC !== undefined, "case3 (승패 없는 참석자): C attended but never won/lost — must still appear in rows");
+  assert(rowC !== undefined, "case5 (승패 없는 참석자): C attended but never won/lost — must still appear in rows");
   assert(
     rowC?.wins === 0 && rowC?.losses === 0 && rowC?.netPoints === 0,
-    `case3: C should show 0승0패0점, got ${JSON.stringify(rowC)}`
+    `case5: C should show 0승0패0점, got ${JSON.stringify(rowC)}`
   );
 }
 
-// Case 4: a participant who exists in the roster but wasn't at tonight's
+// Case 6: a participant who exists in the roster but wasn't at that day's
 // table must not appear at all.
 {
   const participants: ParticipantLike[] = [
     { id: "A", name: "A", active: true },
     { id: "B", name: "B", active: true },
-    { id: "D", name: "D", active: true }, // in the roster, not tonight
+    { id: "D", name: "D", active: true }, // in the roster, not that day
   ];
   const games: GameResult[] = [
     mkGame({
@@ -432,15 +509,15 @@ function mkGame(opts: {
       loserId: "B",
     }),
   ];
-  const board = computeGameNightBoard(participants, games, "2026-08-14");
+  const board = computeGameDayBoard(participants, games, "2026-08-14");
   assert(
     board?.rows.find((r) => r.id === "D") === undefined,
-    "case4 (미참석자 제외): D is in the roster but not tonight's attendeeIds — must not appear in rows"
+    "case6 (미참석자 제외): D is in the roster but not that day's attendeeIds — must not appear in rows"
   );
-  assert(board?.rows.length === 2, `case4: only A and B should appear, got ${board?.rows.length}`);
+  assert(board?.rows.length === 2, `case6: only A and B should appear, got ${board?.rows.length}`);
 }
 
-// Case 5: a soft-deleted game must not affect the count, score, or ranking.
+// Case 7: a soft-deleted game must not affect the count, score, or ranking.
 {
   const participants: ParticipantLike[] = [
     { id: "A", name: "A", active: true },
@@ -467,16 +544,16 @@ function mkGame(opts: {
       active: false,
     }),
   ];
-  const board = computeGameNightBoard(participants, games, "2026-08-14");
-  assert(board?.totalGames === 1, `case5 (소프트 삭제 제외): soft-deleted game must not count, got totalGames=${board?.totalGames}`);
+  const board = computeGameDayBoard(participants, games, "2026-08-14");
+  assert(board?.totalGames === 1, `case7 (소프트 삭제 제외): soft-deleted game must not count, got totalGames=${board?.totalGames}`);
   const rowA = board?.rows.find((r) => r.id === "A");
   assert(
     rowA?.wins === 1 && rowA?.losses === 0,
-    `case5: A's record must reflect only the active game (1승0패), got ${JSON.stringify(rowA)}`
+    `case7: A's record must reflect only the active game (1승0패), got ${JSON.stringify(rowA)}`
   );
 }
 
-// Case 6: a legacy game with no `points` field counts as 1 point.
+// Case 8: a legacy game with no `points` field counts as 1 point.
 {
   const participants: ParticipantLike[] = [
     { id: "A", name: "A", active: true },
@@ -494,12 +571,12 @@ function mkGame(opts: {
       // points intentionally omitted
     }),
   ];
-  const board = computeGameNightBoard(participants, games, "2026-08-14");
+  const board = computeGameDayBoard(participants, games, "2026-08-14");
   const rowA = board?.rows.find((r) => r.id === "A");
-  assert(rowA?.netPoints === 1, `case6 (레거시 점수): a pointless legacy game should count as 1 point, got ${rowA?.netPoints}`);
+  assert(rowA?.netPoints === 1, `case8 (레거시 점수): a pointless legacy game should count as 1 point, got ${rowA?.netPoints}`);
 }
 
-// Case 7: sort order — net points desc, then wins desc, then Korean name
+// Case 9: sort order — net points desc, then wins desc, then Korean name
 // order. Construct a 3-way net-points tie where only wins/name differ.
 {
   const participants: ParticipantLike[] = [
@@ -520,21 +597,21 @@ function mkGame(opts: {
     // 가가: 1승0패 -> net +1 (same record as 나나 -> tiebreak must be name)
     mkGame({ id: "c1", date: "2026-08-14", time: "20:20", createdAt: "2026-08-14T11:20:00.000Z", attendeeIds: ["3", "Z"], winnerId: "3", loserId: "Z" }),
   ];
-  const board = computeGameNightBoard(participants, games, "2026-08-14");
+  const board = computeGameDayBoard(participants, games, "2026-08-14");
   const order = (board?.rows ?? []).filter((r) => r.id !== "Z").map((r) => r.name);
   assert(
     order[0] === "다다",
-    `case7 (정렬): 다다 has the most wins (2) among the net-points-tied group, should rank first, got order=${JSON.stringify(order)}`
+    `case9 (정렬): 다다 has the most wins (2) among the net-points-tied group, should rank first, got order=${JSON.stringify(order)}`
   );
   assert(
     order[1] === "가가" && order[2] === "나나",
-    `case7: 나나/가가 tie on both net points and wins (1승0패 each) -> Korean name order (가가 before 나나), got order=${JSON.stringify(order)}`
+    `case9: 나나/가가 tie on both net points and wins (1승0패 each) -> Korean name order (가가 before 나나), got order=${JSON.stringify(order)}`
   );
 }
 
-// Case 8: tonight's streak, not career streak. A participant who won 3 in a
-// row YESTERDAY and lost once TODAY must show streakType "L", length 1 for
-// TONIGHT's board — using the career streak here would wrongly show "W"/3.
+// Case 10: that day's streak, not career streak. A participant who won 3 in
+// a row YESTERDAY and lost once on the target day must show streakType "L",
+// length 1 — using the career streak here would wrongly show "W"/3.
 {
   const participants: ParticipantLike[] = [
     { id: "A", name: "A", active: true },
@@ -546,11 +623,148 @@ function mkGame(opts: {
     mkGame({ id: "y3", date: "2026-08-13", time: "20:10", createdAt: "2026-08-13T11:10:00.000Z", attendeeIds: ["A", "B"], winnerId: "A", loserId: "B" }),
     mkGame({ id: "t1", date: "2026-08-14", time: "20:00", createdAt: "2026-08-14T11:00:00.000Z", attendeeIds: ["A", "B"], winnerId: "B", loserId: "A" }),
   ];
-  const board = computeGameNightBoard(participants, games, "2026-08-14");
+  const board = computeGameDayBoard(participants, games, "2026-08-14");
   const rowA = board?.rows.find((r) => r.id === "A");
   assert(
     rowA?.streakType === "L" && rowA?.streakLength === 1,
-    `case8 (오늘 밤 스트릭): A won 3 straight yesterday then lost once today — tonight's board must show L/1, not the career W/3 streak. got ${JSON.stringify(rowA)}`
+    `case10 (해당 경기일 스트릭): A won 3 straight yesterday then lost once today — the board must show L/1, not the career W/3 streak. got ${JSON.stringify(rowA)}`
+  );
+}
+
+// Case 11: computeRecentGameDaysSummary's 7-day window — today plus the 6
+// days before it are all in range (no count cap), and the 8th day back is
+// excluded.
+{
+  const today11 = "2026-08-16";
+  const participants11: ParticipantLike[] = [
+    { id: "A", name: "A", active: true },
+    { id: "B", name: "B", active: true },
+  ];
+  const games11: GameResult[] = [];
+  for (let i = 0; i <= 6; i++) {
+    const d = addDaysToIsoDate(today11, -i);
+    games11.push(
+      mkGame({ id: `d${i}`, date: d, time: "20:00", createdAt: `${d}T11:00:00.000Z`, attendeeIds: ["A", "B"], winnerId: "A", loserId: "B" })
+    );
+  }
+  const outside = addDaysToIsoDate(today11, -7);
+  games11.push(
+    mkGame({ id: "out", date: outside, time: "20:00", createdAt: `${outside}T11:00:00.000Z`, attendeeIds: ["A", "B"], winnerId: "A", loserId: "B" })
+  );
+
+  const summary11 = computeRecentGameDaysSummary(participants11, games11, today11);
+  assert(summary11.length === 7, `case11 (7일 창): expected all 7 in-window days with no cap, got ${summary11.length}`);
+  assert(
+    !summary11.some((d) => d.date === outside),
+    `case11: the 8th-day-back entry must be excluded, got dates=${summary11.map((d) => d.date)}`
+  );
+}
+
+// Case 12: 7-day window across a month/year boundary — today=2026-01-03, so
+// the window's earliest day (today - 6) is 2025-12-28, and a game logged
+// there must be included (exercises addDaysToIsoDate's month/year rollover,
+// not just same-month arithmetic).
+{
+  const today12 = "2026-01-03";
+  const target = addDaysToIsoDate(today12, -6);
+  assert(target === "2025-12-28", `case12 sanity: addDaysToIsoDate(2026-01-03, -6) should be 2025-12-28, got ${target}`);
+
+  const participants12: ParticipantLike[] = [
+    { id: "A", name: "A", active: true },
+    { id: "B", name: "B", active: true },
+  ];
+  const games12: GameResult[] = [
+    mkGame({ id: "g12", date: target, time: "20:00", createdAt: `${target}T11:00:00.000Z`, attendeeIds: ["A", "B"], winnerId: "A", loserId: "B" }),
+  ];
+  const summary12 = computeRecentGameDaysSummary(participants12, games12, today12);
+  assert(
+    summary12.some((d) => d.date === target),
+    `case12 (연 경계): a game day 6 days before 2026-01-03 (2025-12-28) must be included in the 7-day window, got ${JSON.stringify(summary12)}`
+  );
+}
+
+// Case 13: computeRecords' daily margin (하루 최고/최저 득실차). A: 1 win
+// worth 2 points + 2 losses worth 1 point each on the same day -> margin 0.
+// B: 3 wins worth 1 point each, 0 losses -> margin +3 (the day's best). X
+// loses a 2-point game and nothing else -> margin -2 (the day's worst). C
+// attends as a pure bystander (never wins/loses) and must not appear in
+// either category at all.
+{
+  const participants13: ParticipantLike[] = [
+    { id: "A", name: "A", active: true },
+    { id: "B", name: "B", active: true },
+    { id: "C", name: "C", active: true },
+    { id: "X", name: "X", active: true },
+    { id: "Y1", name: "Y1", active: true },
+    { id: "Y2", name: "Y2", active: true },
+    { id: "Y3", name: "Y3", active: true },
+  ];
+  const games13: GameResult[] = [
+    mkGame({ id: "m1", date: "2026-08-14", time: "20:00", createdAt: "2026-08-14T11:00:00.000Z", attendeeIds: ["A", "X", "C"], winnerId: "A", loserId: "X", points: 2 }),
+    mkGame({ id: "m2", date: "2026-08-14", time: "20:05", createdAt: "2026-08-14T11:05:00.000Z", attendeeIds: ["A", "Y1"], winnerId: "Y1", loserId: "A" }),
+    mkGame({ id: "m3", date: "2026-08-14", time: "20:10", createdAt: "2026-08-14T11:10:00.000Z", attendeeIds: ["A", "Y2"], winnerId: "Y2", loserId: "A" }),
+    mkGame({ id: "m4", date: "2026-08-14", time: "20:15", createdAt: "2026-08-14T11:15:00.000Z", attendeeIds: ["B", "Y1"], winnerId: "B", loserId: "Y1" }),
+    mkGame({ id: "m5", date: "2026-08-14", time: "20:20", createdAt: "2026-08-14T11:20:00.000Z", attendeeIds: ["B", "Y2"], winnerId: "B", loserId: "Y2" }),
+    mkGame({ id: "m6", date: "2026-08-14", time: "20:25", createdAt: "2026-08-14T11:25:00.000Z", attendeeIds: ["B", "Y3"], winnerId: "B", loserId: "Y3" }),
+  ];
+  const records13 = computeRecords(participants13, games13);
+  const bestEntries = records13.bestDailyMargin.flatMap((tier) => tier.entries);
+  const worstEntries = records13.worstDailyMargin.flatMap((tier) => tier.entries);
+
+  assert(
+    records13.bestDailyMargin[0]?.entries.some((e) => e.id === "B" && e.value === 3),
+    `case13 (하루 최고 득실차): B (3승0패, 각 1점) should top bestDailyMargin at +3, got ${JSON.stringify(records13.bestDailyMargin[0])}`
+  );
+  assert(
+    records13.worstDailyMargin[0]?.entries.some((e) => e.id === "X" && e.value === -2),
+    `case13 (하루 최저 득실차): X (2점짜리 게임에서 짐) should top worstDailyMargin at -2, got ${JSON.stringify(records13.worstDailyMargin[0])}`
+  );
+  assert(
+    !bestEntries.some((e) => e.id === "C") && !worstEntries.some((e) => e.id === "C"),
+    "case13: C attended only as a bystander (never won/lost) — must not appear in either daily-margin category"
+  );
+}
+
+// Case 14: computeCumulativeNetPointsTrend's "quarter" grouping must bucket
+// by quarterKeyOf (string slicing), not `new Date(date)` — a 2026-01-01 game
+// must land in 2026-Q1, not get shifted to 2025-Q4 by a UTC-midnight parse.
+{
+  const games14: GameResult[] = [
+    mkGame({ id: "q1a", date: "2026-01-01", time: "20:00", createdAt: "2026-01-01T11:00:00.000Z", attendeeIds: ["A", "B"], winnerId: "A", loserId: "B" }),
+    mkGame({ id: "q1b", date: "2026-03-31", time: "20:00", createdAt: "2026-03-31T11:00:00.000Z", attendeeIds: ["A", "B"], winnerId: "A", loserId: "B" }),
+    mkGame({ id: "q2a", date: "2026-04-01", time: "20:00", createdAt: "2026-04-01T11:00:00.000Z", attendeeIds: ["A", "B"], winnerId: "A", loserId: "B" }),
+  ];
+  const rows14 = computeCumulativeNetPointsTrend(games14, "quarter");
+  assert(
+    rows14.length === 2,
+    `case14 (분기 버킷): 2026-01-01/03-31 should share one Q1 bucket and 2026-04-01 a separate Q2 bucket, got ${rows14.length} (${rows14.map((r) => r.label).join(",")})`
+  );
+  assert(
+    rows14[0]?.label === quarterKeyOf("2026-01-01") && rows14[0]?.label === "2026-Q1",
+    `case14: the 2026-01-01 game's bucket must be 2026-Q1 (matching quarterKeyOf, not shifted by UTC parsing), got ${rows14[0]?.label}`
+  );
+  assert(rows14[1]?.label === "2026-Q2", `case14: the 2026-04-01 game must land in a separate 2026-Q2 bucket, got ${rows14[1]?.label}`);
+}
+
+// Case 15: computeCumulativeNetPointsTrend's "game" grouping plots one row
+// per active game (soft-deleted games excluded from the row count), ordered
+// by withinDayKey — reusing the midnight-crossing pair from case 4, with the
+// evening game's createdAt again deliberately LATER than the late-night
+// game's, so a createdAt-based sort would get the row order backwards.
+{
+  const gEvening15 = mkGame({ id: "ge15", date: "2026-08-14", time: "22:00", createdAt: "2026-08-14T20:00:00.000Z", attendeeIds: ["A", "B"], winnerId: "A", loserId: "B" });
+  const gLateNight15 = mkGame({ id: "gl15", date: "2026-08-14", time: "01:00", createdAt: "2026-08-14T13:00:00.000Z", attendeeIds: ["A", "B"], winnerId: "B", loserId: "A" });
+  const gDeleted15 = mkGame({ id: "gd15", date: "2026-08-14", time: "23:00", createdAt: "2026-08-14T21:00:00.000Z", attendeeIds: ["A", "B"], winnerId: "A", loserId: "B", active: false });
+
+  const rows15 = computeCumulativeNetPointsTrend([gEvening15, gLateNight15, gDeleted15], "game");
+  assert(rows15.length === 2, `case15 (게임별 버킷): row count must equal active game count (2, excluding the soft-deleted one), got ${rows15.length}`);
+  assert(
+    rows15[0]?.values.A === 1 && rows15[1]?.values.A === 0,
+    `case15: row order must follow withinDayKey (evening=22:00 first, then late-night=01:00), got ${JSON.stringify(rows15.map((r) => r.values))}`
+  );
+  assert(
+    rows15.every((r) => r.date === "2026-08-14"),
+    `case15: every "game" row must carry its business date for the tooltip, got ${JSON.stringify(rows15.map((r) => r.date))}`
   );
 }
 

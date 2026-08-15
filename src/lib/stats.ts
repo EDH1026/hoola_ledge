@@ -338,15 +338,21 @@ export interface RecentGameDaySummary {
   margin: number; // 득실차 — the max net points value shared by topWinners
 }
 
-const RECENT_GAME_DAYS_COUNT = 3;
+const RECENT_GAME_DAYS_WINDOW = 7;
 
 /**
- * The most recent (up to 3) business dates that actually have an active
- * game, most recent first — days with zero games are skipped entirely rather
- * than shown as empty. Replaces computeTodaySummary/TodaySummary (v2.16):
- * "오늘의 요약" only ever showed anything on days someone actually played, so
- * this generalizes it to "however many recent game days" instead of being
- * blank whenever today itself has no games yet.
+ * Every business date within the last `RECENT_GAME_DAYS_WINDOW` days
+ * (`today` inclusive) that actually has an active game, most recent first —
+ * days with zero games are skipped entirely rather than shown as empty. No
+ * count cap (v2.21, PRD §28.7) — a busier week just returns more entries.
+ * Replaces computeTodaySummary/TodaySummary (v2.16): "오늘의 요약" only ever
+ * showed anything on days someone actually played, so this generalizes it to
+ * "recent game days" instead of being blank whenever today itself has no
+ * games yet.
+ *
+ * `today` is a parameter (not `todayInSeoul()` called internally) purely for
+ * testability, and so the business-day basis is shared with the caller
+ * rather than potentially drifting a moment apart.
  *
  * Each day's "최다 승자" is ranked by that day's net points (points-weighted
  * pointsWon - pointsLost), not win count, so a tie (공동 1위) and the
@@ -354,7 +360,8 @@ const RECENT_GAME_DAYS_COUNT = 3;
  */
 export function computeRecentGameDaysSummary(
   participants: ParticipantLike[],
-  games: GameResult[]
+  games: GameResult[],
+  today: string
 ): RecentGameDaySummary[] {
   const active = activeGames(games);
   const byDate = new Map<string, GameResult[]>();
@@ -364,9 +371,12 @@ export function computeRecentGameDaysSummary(
     else byDate.set(g.date, [g]);
   }
 
+  // ISO 날짜 문자열 비교로 충분하다 — new Date(date) 파싱은 UTC 자정
+  // 이슈로 경계가 하루 밀릴 수 있다(§13.5).
+  const windowStart = addDaysToIsoDate(today, -(RECENT_GAME_DAYS_WINDOW - 1));
   const dates = Array.from(byDate.keys())
-    .sort((a, b) => b.localeCompare(a))
-    .slice(0, RECENT_GAME_DAYS_COUNT);
+    .filter((date) => date >= windowStart && date <= today)
+    .sort((a, b) => b.localeCompare(a));
 
   const nameOf = new Map(participants.map((p) => [p.id, p.name]));
   const nameFor = (id: string) => nameOf.get(id) ?? "(삭제된 참가자)";
@@ -815,10 +825,10 @@ export interface RecordsSummary {
   longestLossStreak: RecordTier[];
   mostWinsInOneDay: RecordTier[];
   mostLossesInOneDay: RecordTier[]; // v2.19 — symmetric counterpart to mostWinsInOneDay
-  mostAppearances: RecordTier[];
-  highestNetPoints: RecordTier[]; // v2.16 — career netPoints leaderboard, top
-  lowestNetPoints: RecordTier[]; // v2.16 — career netPoints leaderboard, bottom
+  bestDailyMargin: RecordTier[]; // v2.21 — highest (participant, business day) net points; §28.10.1
+  worstDailyMargin: RecordTier[]; // v2.21 — lowest (participant, business day) net points; §28.10.1
   mostGamesInOneDay: RecordTier[]; // v2.16 — NOT a per-participant record: the busiest single day, by total games played
+  mostAppearances: RecordTier[];
 }
 
 /**
@@ -903,11 +913,21 @@ export function computeRecords(
 
   const winsByDay = new Map<string, number>(); // key: winnerId|date
   const lossesByDay = new Map<string, number>(); // key: loserId|date
+  // v2.21 (PRD §28.10.1) — per (participant, business day) net points
+  // (points-weighted, like everywhere else). Only ever gains a key from a
+  // win or a loss (never from mere attendance), so a day where someone only
+  // sat in as a bystander never produces an entry for them — exactly the
+  // "단순 참관은 제외" rule, for free, by construction (same trick
+  // winsByDay/lossesByDay below already rely on).
+  const marginByDay = new Map<string, number>(); // key: id|date
   for (const g of active) {
+    const points = g.points ?? 1;
     const winKey = `${g.winnerId}|${g.date}`;
     winsByDay.set(winKey, (winsByDay.get(winKey) ?? 0) + 1);
+    marginByDay.set(winKey, (marginByDay.get(winKey) ?? 0) + points);
     const lossKey = `${g.loserId}|${g.date}`;
     lossesByDay.set(lossKey, (lossesByDay.get(lossKey) ?? 0) + 1);
+    marginByDay.set(lossKey, (marginByDay.get(lossKey) ?? 0) - points);
   }
   const dayWinEntries: RecordTierEntry[] = Array.from(winsByDay.entries()).map(
     ([key, wins]) => {
@@ -921,24 +941,17 @@ export function computeRecords(
       return { id, name: nameFor(id), value: losses, startDate: date, endDate: date };
     }
   );
+  const dailyMarginEntries: RecordTierEntry[] = Array.from(marginByDay.entries()).map(
+    ([key, margin]) => {
+      const [id, date] = key.split("|");
+      return { id, name: nameFor(id), value: margin, startDate: date, endDate: date };
+    }
+  );
 
   const stats = computeParticipantStats(participants, active);
   const appearanceEntries: RecordTierEntry[] = stats
     .filter((s) => s.appearances > 0)
     .map((s) => ({ id: s.id, name: s.name, value: s.appearances }));
-  // v2.19 — netPoints is a career-cumulative total with no single date of
-  // its own, but "when was this last confirmed at this value" is exactly
-  // the date of the participant's most recent decisive game (netPoints only
-  // ever moves on a win/loss), so that's what's attached here.
-  const netPointsEntries: RecordTierEntry[] = stats
-    .filter((s) => s.appearances > 0)
-    .map((s) => {
-      const chronological = decisiveGamesForParticipant(s.id, active);
-      const lastDate = chronological.length
-        ? chronological[chronological.length - 1].date
-        : undefined;
-      return { id: s.id, name: s.name, value: s.netPoints, startDate: lastDate, endDate: lastDate };
-    });
 
   // v2.16 — a team-wide record, not a per-participant one: which single
   // (business) day had the most games played, total. `name` is left empty
@@ -958,10 +971,10 @@ export function computeRecords(
     longestLossStreak: topTiers(lossStreakEntries),
     mostWinsInOneDay: topTiers(dayWinEntries),
     mostLossesInOneDay: topTiers(dayLossEntries),
-    mostAppearances: topTiers(appearanceEntries),
-    highestNetPoints: topTiers(netPointsEntries, 3, "desc"),
-    lowestNetPoints: topTiers(netPointsEntries, 3, "asc"),
+    bestDailyMargin: topTiers(dailyMarginEntries, 3, "desc"),
+    worstDailyMargin: topTiers(dailyMarginEntries, 3, "asc"),
     mostGamesInOneDay: topTiers(dayGameCountEntries),
+    mostAppearances: topTiers(appearanceEntries),
   };
 }
 
@@ -995,18 +1008,27 @@ export function computeHighestBalanceRecord(
   return topTiers(entries);
 }
 
-export type PeriodGrouping = "day" | "week" | "month" | "year";
+export type PeriodGrouping = "day" | "week" | "month" | "quarter" | "year";
+/** 누적 순점수 추이 전용 — 판마다 한 점을 찍는 "game"을 추가로 허용한다. 기간별 게임 수 추이 차트에는 쓰지 않는다(모든 버킷이 1이 되어 무의미하므로). */
+export type CumulativeGrouping = PeriodGrouping | "game";
 
 export interface PeriodBucket {
   key: string;
   label: string;
-  start: Date;
   gameCount: number;
   wins: Record<string, number>;
   losses: Record<string, number>;
 }
 
-function bucketStart(date: Date, grouping: PeriodGrouping): Date {
+// day/week/month/year는 기존 Date 기반 계산을 그대로 둔다(범위 밖 —
+// 이번 변경의 요구사항은 "quarter가 티어 화면의 분기 경계와 반드시
+// 일치해야 한다"는 것뿐이다). quarter만 quarterKeyOf()(문자열 슬라이싱,
+// time.ts)로 별도 처리한다 — new Date(date)로 분기를 구하면 UTC 자정
+// 파싱 때문에 하루가 밀려 분기 자체가 바뀔 수 있다(§13.5·§16에서 이미
+// 결론 난 사항).
+type DateBasedGrouping = Exclude<PeriodGrouping, "quarter">;
+
+function bucketStart(date: Date, grouping: DateBasedGrouping): Date {
   switch (grouping) {
     case "day":
       return startOfDay(date);
@@ -1019,7 +1041,7 @@ function bucketStart(date: Date, grouping: PeriodGrouping): Date {
   }
 }
 
-function bucketLabel(date: Date, grouping: PeriodGrouping): string {
+function bucketLabel(date: Date, grouping: DateBasedGrouping): string {
   switch (grouping) {
     case "day":
       return format(date, "MM/dd");
@@ -1032,6 +1054,26 @@ function bucketLabel(date: Date, grouping: PeriodGrouping): string {
   }
 }
 
+/**
+ * A sortable bucket key + display label for one game's business date, given
+ * a grouping. `key` sorts correctly as a plain string for every grouping
+ * this produces: ISO instants (day/week/month/year, via Date#toISOString)
+ * and "yyyy-Qn" (quarter — zero-padded 4-digit year + single-digit quarter)
+ * both compare chronologically under plain string ordering.
+ */
+function periodBucketKeyAndLabel(
+  dateStr: string,
+  grouping: PeriodGrouping
+): { key: string; label: string } {
+  if (grouping === "quarter") {
+    const key = quarterKeyOf(dateStr); // e.g. "2026-Q3" — short enough for an axis label as-is
+    return { key, label: key };
+  }
+  const d = new Date(dateStr);
+  const start = bucketStart(d, grouping);
+  return { key: start.toISOString(), label: bucketLabel(d, grouping) };
+}
+
 /** Filters out soft-deleted (GameResult.active === false) games internally before bucketing. */
 export function groupGamesByPeriod(
   games: GameResult[],
@@ -1042,19 +1084,10 @@ export function groupGamesByPeriod(
   const sorted = [...activeGames(games)].sort((a, b) => a.date.localeCompare(b.date));
 
   for (const g of sorted) {
-    const d = new Date(g.date);
-    const start = bucketStart(d, grouping);
-    const key = start.toISOString();
+    const { key, label } = periodBucketKeyAndLabel(g.date, grouping);
     let bucket = buckets.get(key);
     if (!bucket) {
-      bucket = {
-        key,
-        label: bucketLabel(d, grouping),
-        start,
-        gameCount: 0,
-        wins: {},
-        losses: {},
-      };
+      bucket = { key, label, gameCount: 0, wins: {}, losses: {} };
       buckets.set(key, bucket);
     }
     bucket.gameCount += 1;
@@ -1062,49 +1095,68 @@ export function groupGamesByPeriod(
     bucket.losses[g.loserId] = (bucket.losses[g.loserId] ?? 0) + 1;
   }
 
-  return Array.from(buckets.values()).sort(
-    (a, b) => a.start.getTime() - b.start.getTime()
-  );
+  return Array.from(buckets.values()).sort((a, b) => a.key.localeCompare(b.key));
 }
 
 export interface CumulativeNetPointsRow {
   label: string;
-  values: Record<string, number>; // participantId -> cumulative net points through the end of this bucket
+  values: Record<string, number>; // participantId -> cumulative net points through the end of this bucket/game
+  date?: string; // business date of this point — only set for "game" grouping, where the tooltip needs it since the label is just a sequence number
 }
 
 /**
  * Per-participant cumulative net points (points-weighted, i.e. the same
- * `points`-aware 순점수 used everywhere else in this app — earlier versions
- * of this trend counted every win/loss as ±1 regardless of `points`, which
- * was inconsistent with the rest of the app and is fixed here as part of the
- * v2.16 rework), sampled once per period bucket instead of once per game —
- * so this shares its "추이 단위" (day/week/month/year) with
- * groupGamesByPeriod's game-count trend rather than plotting one point per
- * individual game, which reads poorly once game counts get large.
+ * `points`-aware 순점수 used everywhere else in this app), sampled once per
+ * period bucket (or once per game, for `grouping === "game"`) — bucketed
+ * grouping shares its "추이 단위" (day/week/month/quarter/year) with
+ * groupGamesByPeriod's game-count trend, while "game" plots one point per
+ * individual game (the closest thing to the raw signal, since the value
+ * itself only ever moves on a win/loss).
+ *
+ * Sort order is business-date ascending, then withinDayKey ascending within
+ * the same date (v2.21) — not `createdAt`, which could put a
+ * midnight-crossing or admin-corrected-timestamp game out of order relative
+ * to every other screen that already sorts by withinDayKey (e.g. /games,
+ * the dashboard's "최근 경기일" card).
  */
 export function computeCumulativeNetPointsTrend(
   games: GameResult[],
-  grouping: PeriodGrouping
+  grouping: CumulativeGrouping
 ): CumulativeNetPointsRow[] {
   const sorted = [...activeGames(games)].sort((a, b) =>
-    a.date === b.date ? a.createdAt.localeCompare(b.createdAt) : a.date.localeCompare(b.date)
+    a.date === b.date
+      ? withinDayKey(a).localeCompare(withinDayKey(b))
+      : a.date.localeCompare(b.date)
   );
 
   const running = new Map<string, number>();
+
+  if (grouping === "game") {
+    return sorted.map((g, i) => {
+      const points = g.points ?? 1;
+      running.set(g.winnerId, (running.get(g.winnerId) ?? 0) + points);
+      running.set(g.loserId, (running.get(g.loserId) ?? 0) - points);
+      return {
+        label: String(i + 1),
+        values: Object.fromEntries(running.entries()),
+        date: g.date,
+      };
+    });
+  }
+
   const rows: CumulativeNetPointsRow[] = [];
   let currentKey: string | null = null;
   let currentRow: CumulativeNetPointsRow | null = null;
 
   for (const g of sorted) {
-    const d = new Date(g.date);
-    const key = bucketStart(d, grouping).toISOString();
+    const { key, label } = periodBucketKeyAndLabel(g.date, grouping);
     const points = g.points ?? 1;
     running.set(g.winnerId, (running.get(g.winnerId) ?? 0) + points);
     running.set(g.loserId, (running.get(g.loserId) ?? 0) - points);
 
     if (key !== currentKey) {
       currentKey = key;
-      currentRow = { label: bucketLabel(d, grouping), values: {} };
+      currentRow = { label, values: {} };
       rows.push(currentRow);
     }
     // Overwritten on every game within the same bucket, so it ends up
@@ -1181,53 +1233,64 @@ export function filterByDatePreset<T extends { date: string }>(
   return items;
 }
 
-// ---------- v2.20: live game-night board (PRD §26) ----------
+// ---------- v2.21: "최근 경기일" 카드 (PRD §28.2, v2.20의 게임밤 보드 개편) ----------
 
-export interface GameNightRow {
+export interface GameDayRow {
   id: string;
   name: string;
-  appearances: number; // 오늘 참석 판수
+  appearances: number; // 그 경기일 참석 판수
   wins: number;
   losses: number;
   netPoints: number;
-  streakType: "W" | "L" | null; // 오늘 밤 기준 (통산 스트릭 아님)
+  streakType: "W" | "L" | null; // 그 경기일 기준 (통산 스트릭 아님)
   streakLength: number;
 }
 
-export interface GameNightBoard {
-  date: string; // 영업일 "yyyy-MM-dd"
+export interface GameDayBoard {
+  date: string; // 대상 영업일 "yyyy-MM-dd"
+  status: "live" | "closed"; // 대상 영업일이 오늘이면 live, 지난 경기일이면 closed
   totalGames: number;
   countsByGameType: { gameType: GameType | undefined; count: number }[];
-  rows: GameNightRow[];
-  latestGame: GameResult | null;
-  latestSequence: number | null; // 그 게임의 N차전 번호
+  rows: GameDayRow[];
+  /** 그 경기일의 개별 게임, 최신순(withinDayKey 내림차순) — 접이식 상세 목록이 그대로 렌더한다. */
+  games: { game: GameResult; sequence: number | null }[];
 }
 
 /**
- * v2.20 (PRD §26): 특정 영업일 하루치 게임의 실시간 현황. 새 지표가 아니라
- * 기존 computeParticipantStats/computeCurrentStreaks를 재사용하지만, 얇은
- * 래퍼로 두지 않고 별도 함수로 둔 이유는 "오늘 참석했지만 승패가 아직
- * 없는 사람"까지 rows에 포함시켜야 하기 때문이다 —
- * computeParticipantPointTotals는 승/패가 있는 사람만 맵에 키가 생겨서
- * 못 쓰고, computeParticipantStats는 "참가자 목록에 있는 사람"만
- * 0으로 초기화해주므로, 그 목록 자체를 오늘 참석자로 미리 좁혀서
- * 넘기면(전체 참가자 풀이 아니라) 정확히 원하는 결과가 나온다.
+ * v2.21 (PRD §28.2): "활성 게임이 있는 가장 최근 영업일" 하루치 현황.
+ * v2.20의 computeGameNightBoard는 대상 날짜가 항상 "오늘"이라 게임이 없는
+ * 날은 카드 자체가 사라졌다 — 주 2회 모이는 그룹이라 대부분의 날이 그랬다.
+ * 이제 대상 영업일 자체를 "가장 최근으로 게임이 있었던 날"로 찾으므로,
+ * 게임이 한 판이라도 기록돼 있으면 항상 무언가를 반환한다(null은 활성
+ * 게임이 정말 하나도 없을 때뿐).
  *
- * 게임이 하나도 없는 영업일은 "게임 밤이 아님"을 뜻하므로 null을
- * 반환한다 — 호출부(대시보드)가 이 null로 보드 표시 여부를 판정한다.
+ * 새 지표가 아니라 기존 computeParticipantStats/computeCurrentStreaks를
+ * 재사용하지만, 얇은 래퍼로 두지 않고 별도 함수로 둔 이유는 "그날
+ * 참석했지만 승패가 아직 없는 사람"까지 rows에 포함시켜야 하기 때문이다 —
+ * computeParticipantPointTotals는 승/패가 있는 사람만 맵에 키가 생겨서
+ * 못 쓰고, computeParticipantStats는 "참가자 목록에 있는 사람"만 0으로
+ * 초기화해주므로, 그 목록 자체를 그날 참석자로 미리 좁혀서 넘기면(전체
+ * 참가자 풀이 아니라) 정확히 원하는 결과가 나온다.
+ *
+ * `today`(=todayInSeoul())를 인자로 받는 이유는 순수하게 테스트
+ * 가능성이다 — 함수 안에서 직접 호출하면 검증 스크립트가 "종료된
+ * 경기일" 케이스를 만들 수 없다.
  */
-export function computeGameNightBoard(
+export function computeGameDayBoard(
   participants: ParticipantLike[],
   games: GameResult[],
-  businessDate: string
-): GameNightBoard | null {
-  const tonightGames = activeGames(games).filter((g) => g.date === businessDate);
-  if (tonightGames.length === 0) return null;
+  today: string
+): GameDayBoard | null {
+  const active = activeGames(games);
+  if (active.length === 0) return null;
 
-  // 오늘 참석자만 — attendeeIds의 합집합. 전체 참가자 풀을 나열하면 오늘
-  // 안 온 사람이 0승0패로 섞여 보드가 의미를 잃는다.
+  const targetDate = active.reduce((latest, g) => (g.date > latest ? g.date : latest), "");
+  const dayGames = active.filter((g) => g.date === targetDate);
+
+  // 그날 참석자만 — attendeeIds의 합집합. 전체 참가자 풀을 나열하면 그날
+  // 안 온 사람이 0승0패로 섞여 카드가 의미를 잃는다.
   const attendeeIds = new Set<string>();
-  for (const g of tonightGames) {
+  for (const g of dayGames) {
     for (const id of g.attendeeIds) attendeeIds.add(id);
   }
   const byId = new Map(participants.map((p) => [p.id, p]));
@@ -1235,13 +1298,13 @@ export function computeGameNightBoard(
     (id) => byId.get(id) ?? { id, name: "(삭제된 참가자)", active: false }
   );
 
-  const stats = computeParticipantStats(attendees, tonightGames);
-  // 오늘 밤 기준 스트릭 — 통산이 아니라 오늘 게임만 넘겨서 계산한다.
+  const stats = computeParticipantStats(attendees, dayGames);
+  // 그 경기일 기준 스트릭 — 통산이 아니라 그날 게임만 넘겨서 계산한다.
   const streaks = new Map(
-    computeCurrentStreaks(attendees, tonightGames).map((s) => [s.id, s])
+    computeCurrentStreaks(attendees, dayGames).map((s) => [s.id, s])
   );
 
-  const rows: GameNightRow[] = stats.map((s) => {
+  const rows: GameDayRow[] = stats.map((s) => {
     const streak = streaks.get(s.id);
     return {
       id: s.id,
@@ -1262,7 +1325,7 @@ export function computeGameNightBoard(
   });
 
   const countsMap = new Map<GameType | undefined, number>();
-  for (const g of tonightGames) {
+  for (const g of dayGames) {
     countsMap.set(g.gameType, (countsMap.get(g.gameType) ?? 0) + 1);
   }
   const countsByGameType = Array.from(countsMap.entries()).map(([gameType, count]) => ({
@@ -1270,27 +1333,28 @@ export function computeGameNightBoard(
     count,
   }));
 
-  // withinDayKey로 정렬 — 자정을 넘긴 01:30판이 22:00판보다 뒤에 오도록
-  // (§18.1). 문자열 그대로("01:30" < "22:00") 비교하면 순서가 뒤집힌다.
-  const sortedTonight = [...tonightGames].sort((a, b) =>
-    withinDayKey(a).localeCompare(withinDayKey(b))
+  // withinDayKey 내림차순(최신 먼저) — 자정을 넘긴 01:30판이 22:00판보다
+  // 뒤(=실제로는 더 최신)에 오도록(§18.1). 문자열 그대로("01:30" <
+  // "22:00") 비교하면 순서가 뒤집힌다.
+  const sortedByRecency = [...dayGames].sort((a, b) =>
+    withinDayKey(b).localeCompare(withinDayKey(a))
   );
-  const latestGame = sortedTonight.length
-    ? sortedTonight[sortedTonight.length - 1]
-    : null;
-  // N차전 번호는 전체 게임 목록을 넘겨야 정확하다(§games.ts 참고) —
-  // 오늘 게임만 넘겨도 값 자체는 같지만, 다른 화면(예: /games)과 항상
-  // 같은 맵을 쓰는 습관을 유지한다.
+  // N차전 번호는 전체 게임 목록을 넘겨야 정확하다(games.ts 참고) — 그날
+  // 게임만 넘겨도 값 자체는 같지만, 다른 화면(예: /games)과 항상 같은
+  // 맵을 쓰는 습관을 유지한다.
   const sequenceNumbers = computeDailySequenceNumbers(games);
-  const latestSequence = latestGame ? sequenceNumbers.get(latestGame.id) ?? null : null;
+  const gamesWithSequence = sortedByRecency.map((game) => ({
+    game,
+    sequence: sequenceNumbers.get(game.id) ?? null,
+  }));
 
   return {
-    date: businessDate,
-    totalGames: tonightGames.length,
+    date: targetDate,
+    status: targetDate === today ? "live" : "closed",
+    totalGames: dayGames.length,
     countsByGameType,
     rows,
-    latestGame,
-    latestSequence,
+    games: gamesWithSequence,
   };
 }
 

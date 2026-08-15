@@ -12,6 +12,8 @@ import {
   CartesianGrid,
   LineChart,
   Line,
+  useYAxisScale,
+  usePlotArea,
 } from "recharts";
 import { GAME_TYPE_LABELS, GAME_TYPES, GameResult } from "@/lib/types";
 import { activeGames } from "@/lib/games";
@@ -26,6 +28,7 @@ import {
   filterGamesByType,
   GameTypeFilter,
   PeriodGrouping,
+  CumulativeGrouping,
   RangePreset,
 } from "@/lib/stats";
 import { Card } from "@/components/ui/Card";
@@ -53,10 +56,22 @@ const RANGE_OPTIONS: { value: RangePreset; label: string }[] = [
   { value: "custom", label: "직접 입력" },
 ];
 
-const GROUPING_OPTIONS: { value: PeriodGrouping; label: string }[] = [
+// v2.21 (PRD §28.9.1) — 두 차트가 서로 다른 추이 단위 목록/기본값을 쓴다.
+// "게임별"은 누적 순점수 추이에만 붙는다 — 기간별 게임 수 추이에 붙이면
+// 모든 버킷이 항상 1이 되어 무의미하다.
+const CUMULATIVE_GROUPING_OPTIONS: { value: CumulativeGrouping; label: string }[] = [
+  { value: "game", label: "게임별" },
   { value: "day", label: "일별" },
   { value: "week", label: "주별" },
   { value: "month", label: "월별" },
+  { value: "quarter", label: "분기별" },
+  { value: "year", label: "연도별" },
+];
+const TREND_GROUPING_OPTIONS: { value: PeriodGrouping; label: string }[] = [
+  { value: "day", label: "일별" },
+  { value: "week", label: "주별" },
+  { value: "month", label: "월별" },
+  { value: "quarter", label: "분기별" },
   { value: "year", label: "연도별" },
 ];
 
@@ -66,7 +81,8 @@ const GAME_TYPE_OPTIONS: { value: GameTypeFilter; label: string }[] = [
 ];
 
 const DEFAULT_RANGE: RangePreset = "30d";
-const DEFAULT_GROUPING: PeriodGrouping = "week";
+const DEFAULT_CUMULATIVE_GROUPING: CumulativeGrouping = "day";
+const DEFAULT_TREND_GROUPING: PeriodGrouping = "week";
 
 // v2.19 (배치 C, PRD §24.13) — the old continuous-alpha heatmap floored at
 // 0.12/capped at 0.65, which against --color-surface measured ~1.07-2.7:1 —
@@ -119,17 +135,19 @@ function GameTypeFilterButtons({
   );
 }
 
-/** Shared 추이 단위 filter — used independently by the two trend sections (each keeps its own URL param, see StatsClient's cbucket/gbucket). */
-function GroupingFilterButtons({
+/** Shared 추이 단위 filter — used independently by the two trend sections (each keeps its own URL param and its own option list/default, see StatsClient's cbucket/gbucket). */
+function GroupingFilterButtons<G extends string>({
   value,
   onChange,
+  options,
 }: {
-  value: PeriodGrouping;
-  onChange: (v: PeriodGrouping) => void;
+  value: G;
+  onChange: (v: G) => void;
+  options: { value: G; label: string }[];
 }) {
   return (
     <div className="flex gap-2 flex-wrap">
-      {GROUPING_OPTIONS.map((opt) => (
+      {options.map((opt) => (
         <FilterChip
           key={opt.value}
           selected={value === opt.value}
@@ -139,6 +157,102 @@ function GroupingFilterButtons({
         </FilterChip>
       ))}
     </div>
+  );
+}
+
+const LABEL_MIN_GAP = 14; // px — minimum vertical spacing between two end labels
+const LABEL_MAX_NAME_LEN = 6;
+
+function truncateName(name: string): string {
+  return name.length > LABEL_MAX_NAME_LEN ? `${name.slice(0, LABEL_MAX_NAME_LEN)}…` : name;
+}
+
+/**
+ * v2.21 (PRD §28.9.2) — replaces the bottom <Legend> (unreadable once 8
+ * lines are stacked: matching a line to a name means glancing back and
+ * forth between the plot and a color swatch) with a name label at the right
+ * end of each line, colored the same as the line.
+ *
+ * recharts 3.x deprecated <Customized> ("all charts are able to render
+ * arbitrary elements anywhere" per its own doc comment in
+ * node_modules/recharts/types/component/Customized.d.ts) — this component
+ * is instead rendered directly as a child of <LineChart>, and reads the
+ * chart's real pixel geometry via the useYAxisScale/usePlotArea hooks
+ * (recharts 3.8+) instead of estimating it.
+ */
+function CumulativeEndLabels({
+  trackedNames,
+  data,
+  colorOf,
+}: {
+  trackedNames: string[];
+  data: Record<string, string | number>[];
+  colorOf: (name: string) => string;
+}) {
+  const yScale = useYAxisScale();
+  const plotArea = usePlotArea();
+
+  if (!yScale || !plotArea || data.length === 0) return null;
+
+  const lastRow = data[data.length - 1];
+  type Entry = { name: string; color: string; trueY: number; y: number };
+  const entries: Entry[] = [];
+  for (const name of trackedNames) {
+    const value = lastRow[name];
+    if (typeof value !== "number") continue;
+    const py = yScale(value);
+    if (py === undefined) continue;
+    entries.push({ name, color: colorOf(name), trueY: py, y: py });
+  }
+  if (entries.length === 0) return null;
+
+  // 겹침 방지: y 오름차순 정렬 후 최소 간격을 확보하도록 아래로 밀고,
+  // 그 결과 마지막 라벨이 플롯 하단을 넘치면 다시 위로 되밀어 배분한다.
+  entries.sort((a, b) => a.y - b.y);
+  for (let i = 1; i < entries.length; i++) {
+    entries[i].y = Math.max(entries[i].y, entries[i - 1].y + LABEL_MIN_GAP);
+  }
+  const bottomLimit = plotArea.y + plotArea.height - 2;
+  if (entries[entries.length - 1].y > bottomLimit) {
+    entries[entries.length - 1].y = bottomLimit;
+    for (let i = entries.length - 2; i >= 0; i--) {
+      entries[i].y = Math.min(entries[i].y, entries[i + 1].y - LABEL_MIN_GAP);
+    }
+  }
+  const topLimit = plotArea.y + 6;
+  for (const e of entries) {
+    e.y = Math.min(bottomLimit, Math.max(topLimit, e.y));
+  }
+
+  const lineEndX = plotArea.x + plotArea.width;
+  const labelX = lineEndX + 6;
+
+  return (
+    <g>
+      {entries.map((e) => {
+        // 실제 선 끝(trueY)에서 라벨이 밀려났으면(겹침 회피로 y가 옮겨진
+        // 경우) 같은 색의 짧은 연결선으로 어느 선인지 이어준다.
+        const displaced = Math.abs(e.y - e.trueY) > 2;
+        return (
+          <g key={e.name}>
+            {displaced && (
+              <line
+                x1={lineEndX}
+                y1={e.trueY}
+                x2={labelX - 2}
+                y2={e.y}
+                stroke={e.color}
+                strokeOpacity={0.4}
+                strokeWidth={1}
+              />
+            )}
+            <text x={labelX} y={e.y} fontSize={11} fill={e.color} dominantBaseline="middle">
+              {truncateName(e.name)}
+            </text>
+          </g>
+        );
+      })}
+    </g>
   );
 }
 
@@ -165,8 +279,9 @@ export default function StatsClient({
   const cumulativeGameType = (searchParams.get("ctype") as GameTypeFilter | null) ?? "all";
   const trendGameType = (searchParams.get("ttype") as GameTypeFilter | null) ?? "all";
   const cumulativeGrouping =
-    (searchParams.get("cbucket") as PeriodGrouping | null) ?? DEFAULT_GROUPING;
-  const trendGrouping = (searchParams.get("gbucket") as PeriodGrouping | null) ?? DEFAULT_GROUPING;
+    (searchParams.get("cbucket") as CumulativeGrouping | null) ?? DEFAULT_CUMULATIVE_GROUPING;
+  const trendGrouping =
+    (searchParams.get("gbucket") as PeriodGrouping | null) ?? DEFAULT_TREND_GROUPING;
   const h2hParticipantId = searchParams.get("h2h");
 
   const setRange = (v: RangePreset) => set({ range: v === DEFAULT_RANGE ? null : v });
@@ -178,10 +293,13 @@ export default function StatsClient({
   const setWinLossGameType = (v: GameTypeFilter) => set({ wtype: v === "all" ? null : v });
   const setCumulativeGameType = (v: GameTypeFilter) => set({ ctype: v === "all" ? null : v });
   const setTrendGameType = (v: GameTypeFilter) => set({ ttype: v === "all" ? null : v });
-  const setCumulativeGrouping = (v: PeriodGrouping) =>
-    set({ cbucket: v === DEFAULT_GROUPING ? null : v });
+  // v2.21 — 예전엔 둘 다 같은 DEFAULT_GROUPING과 비교해서, 누적 차트에서
+  // "주별"(그쪽 기본값은 이제 "일별")을 고르면 URL이 비워지고 다시
+  // "일별"로 읽히는 버그가 있었다. 각자 자기 기본값과 비교하도록 분리.
+  const setCumulativeGrouping = (v: CumulativeGrouping) =>
+    set({ cbucket: v === DEFAULT_CUMULATIVE_GROUPING ? null : v });
   const setTrendGrouping = (v: PeriodGrouping) =>
-    set({ gbucket: v === DEFAULT_GROUPING ? null : v });
+    set({ gbucket: v === DEFAULT_TREND_GROUPING ? null : v });
   const setH2h = (id: string | null) => set({ h2h: id });
   // 누적 추이 차트는 (id가 아니라) 참가자 이름을 recharts의 dataKey로 쓰므로
   // — computeCumulativeNetPointsTrend의 id 기반 결과를 이름으로 옮겨 담는
@@ -287,7 +405,11 @@ export default function StatsClient({
   const cumulativeData = useMemo(() => {
     const nameOf = new Map(participants.map((p) => [p.id, p.name]));
     return cumulativeRows.map((row) => {
+      // "__date"는 실제 참가자 이름과 충돌할 일이 없는 예약 키 — "게임별"
+      // 그루핑에서 라벨이 그냥 일련번호("1", "2", …)라 툴팁에 실제 날짜를
+      // 보여주려면 행마다 원본 날짜를 함께 담아둬야 한다.
       const out: Record<string, string | number> = { label: row.label };
+      if (row.date) out.__date = row.date;
       for (const [id, val] of Object.entries(row.values)) {
         out[nameOf.get(id) ?? id] = val;
       }
@@ -298,7 +420,7 @@ export default function StatsClient({
     const names = new Set<string>();
     for (const row of cumulativeData) {
       for (const key of Object.keys(row)) {
-        if (key !== "label") names.add(key);
+        if (key !== "label" && key !== "__date") names.add(key);
       }
     }
     return Array.from(names);
@@ -693,7 +815,13 @@ export default function StatsClient({
 
       <Card>
         <SectionTitle
-          action={<GroupingFilterButtons value={cumulativeGrouping} onChange={setCumulativeGrouping} />}
+          action={
+            <GroupingFilterButtons
+              value={cumulativeGrouping}
+              onChange={setCumulativeGrouping}
+              options={CUMULATIVE_GROUPING_OPTIONS}
+            />
+          }
         >
           참가자별 누적 순점수 추이
         </SectionTitle>
@@ -712,9 +840,12 @@ export default function StatsClient({
             />
           </div>
         ) : (
+          // v2.21 (PRD §28.9.2) — 하단 범례를 없애고 선 오른쪽 끝에 이름을
+          // 직접 붙인다(CumulativeEndLabels). margin.right로 라벨 자리를
+          // 확보 — 없어진 범례가 돌려준 세로 공간 덕에 390px에서도 순증.
           <div style={{ width: "100%", height: "min(360px, 55vh)" }} className="mt-4">
             <ResponsiveContainer>
-              <LineChart data={cumulativeData} margin={{ bottom: 8 }}>
+              <LineChart data={cumulativeData} margin={{ top: 8, right: 76, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_STROKE} />
                 <XAxis
                   dataKey="label"
@@ -722,8 +853,13 @@ export default function StatsClient({
                   interval="preserveStartEnd"
                 />
                 <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: CHART_TICK_FILL }} />
-                <Tooltip {...CHART_TOOLTIP_PROPS} />
-                <Legend {...CHART_LEGEND_PROPS} wrapperStyle={{ ...CHART_LEGEND_PROPS.wrapperStyle, paddingTop: 8 }} />
+                <Tooltip
+                  {...CHART_TOOLTIP_PROPS}
+                  labelFormatter={(label, payload) => {
+                    const date = payload?.[0]?.payload?.__date;
+                    return date ? `${label} (${date})` : label;
+                  }}
+                />
                 {trackedNames.map((name) => (
                   <Line
                     key={name}
@@ -735,6 +871,11 @@ export default function StatsClient({
                     strokeWidth={2}
                   />
                 ))}
+                <CumulativeEndLabels
+                  trackedNames={trackedNames}
+                  data={cumulativeData}
+                  colorOf={(name) => nameToColor.get(name) ?? PARTICIPANT_COLOR_FALLBACK}
+                />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -743,7 +884,13 @@ export default function StatsClient({
 
       <Card>
         <SectionTitle
-          action={<GroupingFilterButtons value={trendGrouping} onChange={setTrendGrouping} />}
+          action={
+            <GroupingFilterButtons
+              value={trendGrouping}
+              onChange={setTrendGrouping}
+              options={TREND_GROUPING_OPTIONS}
+            />
+          }
         >
           기간별 게임 수 추이
         </SectionTitle>

@@ -78,6 +78,19 @@ export function GameNightBadge({ businessDate }: { businessDate: string }) {
   );
 }
 
+/** v2.21 (PRD §28.2) — 대시보드 "최근 경기일" 카드의 상태 칩. "진행 중"은 대상 영업일이 오늘(todayInSeoul())과 같을 때, "종료"는 그보다 과거의 마지막 경기일일 때. */
+export function GameDayStatusChip({ status }: { status: "live" | "closed" }) {
+  return status === "live" ? (
+    <span className="inline-flex items-center rounded-full border border-win/30 bg-win/15 text-win px-2 py-0.5 text-xs font-semibold whitespace-nowrap">
+      진행 중
+    </span>
+  ) : (
+    <span className="inline-flex items-center rounded-full border border-line bg-surface-raised text-content-muted px-2 py-0.5 text-xs font-medium whitespace-nowrap">
+      종료
+    </span>
+  );
+}
+
 export function LedgerAdjustmentBadge() {
   return (
     <span className="inline-flex items-center rounded-full border border-line bg-surface-raised text-content-sub px-2 py-0.5 text-xs font-medium whitespace-nowrap">
