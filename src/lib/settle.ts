@@ -1,6 +1,66 @@
 import { GameResult, LedgerAdjustment, Settlement, normalizeSettlementType } from "./types";
 import { activeGames } from "./games";
 
+interface BalanceEvent {
+  createdAt: string;
+  date: string;
+  deltas: readonly [string, number][];
+}
+
+/**
+ * One entry per game/settlement/adjustment, each carrying the balance deltas
+ * it causes. Shared by computeNetBalances (order doesn't matter, just sums
+ * every delta) and computePeakBalances (order matters — it replays these in
+ * the sequence they actually happened) so the sign conventions below live in
+ * exactly one place instead of being duplicated and risking drift.
+ */
+function buildBalanceEvents(
+  games: GameResult[],
+  settlements: Settlement[],
+  adjustments: LedgerAdjustment[]
+): BalanceEvent[] {
+  const events: BalanceEvent[] = [];
+
+  for (const g of activeGames(games)) {
+    const points = g.points ?? 1; // legacy games predate the points field
+    events.push({
+      createdAt: g.createdAt,
+      date: g.date,
+      // winner is owed `points` by the loser
+      deltas: [[g.winnerId, points], [g.loserId, -points]],
+    });
+  }
+
+  for (const s of settlements) {
+    // Donation moves value the same direction as a game does (Lose -> Win):
+    // the giver's balance goes DOWN and the receiver's balance goes UP. This
+    // is not debt-repayment — it's the giver freely handing their own points
+    // to someone else, uncapped and not tied to any computed debt.
+    //
+    // "payment": fromId (debtor) balance += amount, toId (creditor) balance
+    // -= amount — paying down a real computed debt so both sides move
+    // toward 0.
+    const deltas: readonly [string, number][] =
+      normalizeSettlementType(s.type) === "donation"
+        ? [[s.fromId, -s.amount], [s.toId, s.amount]]
+        : [[s.fromId, s.amount], [s.toId, -s.amount]];
+    events.push({ createdAt: s.createdAt, date: s.date, deltas });
+  }
+
+  for (const a of adjustments) {
+    // Opposite direction from Settlement: fromId is the debtor here, so
+    // recording the adjustment makes them owe more (balance moves negative)
+    // and makes toId owed more (balance moves positive).
+    events.push({
+      createdAt: a.createdAt,
+      date: a.date,
+      deltas: [[a.fromId, -a.amount], [a.toId, a.amount]],
+    });
+  }
+
+  return events;
+}
+
 /**
  * Net balance per participant.
  * Positive balance = this person is owed points (net creditor).
@@ -15,39 +75,10 @@ export function computeNetBalances(
   adjustments: LedgerAdjustment[] = []
 ): Map<string, number> {
   const balances = new Map<string, number>();
-  const add = (id: string, delta: number) => {
-    balances.set(id, (balances.get(id) ?? 0) + delta);
-  };
-
-  for (const g of activeGames(games)) {
-    const points = g.points ?? 1; // legacy games predate the points field
-    add(g.winnerId, points); // winner is owed `points` by the loser
-    add(g.loserId, -points);
-  }
-
-  for (const s of settlements) {
-    if (normalizeSettlementType(s.type) === "donation") {
-      // Donation moves value the same direction as a game does (Lose -> Win):
-      // the giver's balance goes DOWN and the receiver's balance goes UP.
-      // This is not debt-repayment — it's the giver freely handing their own
-      // points to someone else, uncapped and not tied to any computed debt.
-      add(s.fromId, -s.amount);
-      add(s.toId, s.amount);
-    } else {
-      // "payment": fromId (debtor) balance += amount, toId (creditor)
-      // balance -= amount — paying down a real computed debt so both sides
-      // move toward 0.
-      add(s.fromId, s.amount);
-      add(s.toId, -s.amount);
+  for (const evt of buildBalanceEvents(games, settlements, adjustments)) {
+    for (const [id, delta] of evt.deltas) {
+      balances.set(id, (balances.get(id) ?? 0) + delta);
     }
-  }
-
-  for (const a of adjustments) {
-    // Opposite direction from Settlement: fromId is the debtor here, so
-    // recording the adjustment makes them owe more (balance moves negative)
-    // and makes toId owed more (balance moves positive).
-    add(a.fromId, -a.amount);
-    add(a.toId, a.amount);
   }
 
   // Clean up exact-zero entries for tidiness.
@@ -56,6 +87,51 @@ export function computeNetBalances(
   }
 
   return balances;
+}
+
+export interface PeakBalanceEntry {
+  peak: number; // the highest positive balance this participant ever held
+  date: string; // the date that peak was reached on
+}
+
+/**
+ * The highest positive balance ("채권", points owed TO them) each
+ * participant ever held at any point in time — not their current balance.
+ * A balance that climbed to 20 and later settled back down to 19 still
+ * counts as a 20-point record; settling back down doesn't erase that it
+ * happened. Replays every game/settlement/adjustment in the order they were
+ * actually recorded (createdAt — the same chronological basis
+ * computeRecords' win/loss streaks use in stats.ts), keeping a running
+ * per-participant balance and remembering its high-water mark.
+ *
+ * Participants who never held a positive balance are omitted entirely
+ * (there's no "record" to show), matching how computeRecords omits
+ * participants with a zero-length streak.
+ */
+export function computePeakBalances(
+  games: GameResult[],
+  settlements: Settlement[],
+  adjustments: LedgerAdjustment[] = []
+): Map<string, PeakBalanceEntry> {
+  const events = buildBalanceEvents(games, settlements, adjustments).sort((a, b) =>
+    a.createdAt.localeCompare(b.createdAt)
+  );
+
+  const running = new Map<string, number>();
+  const peaks = new Map<string, PeakBalanceEntry>();
+
+  for (const evt of events) {
+    for (const [id, delta] of evt.deltas) {
+      const next = (running.get(id) ?? 0) + delta;
+      running.set(id, next);
+      const current = peaks.get(id);
+      if (next > 0 && (!current || next > current.peak)) {
+        peaks.set(id, { peak: next, date: evt.date });
+      }
+    }
+  }
+
+  return peaks;
 }
 
 export interface Transaction {

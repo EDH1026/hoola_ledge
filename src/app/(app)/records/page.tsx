@@ -1,10 +1,10 @@
-import { listParticipants, listGames } from "@/lib/storage";
+import { getFullDB } from "@/lib/storage";
 import RecordsClient from "./RecordsClient";
 
 export const dynamic = "force-dynamic";
 
 export default async function RecordsPage() {
-  const [participants, games] = await Promise.all([listParticipants(), listGames()]);
+  const { participants, games, settlements, adjustments } = await getFullDB();
 
   return (
     <div className="space-y-6">
@@ -21,6 +21,8 @@ export default async function RecordsPage() {
           active: p.active,
         }))}
         games={games}
+        settlements={settlements}
+        adjustments={adjustments}
       />
     </div>
   );

@@ -5,9 +5,10 @@ import {
   startOfYear,
   format,
 } from "date-fns";
-import { GameResult, GameType } from "./types";
+import { GameResult, GameType, Settlement, LedgerAdjustment } from "./types";
 import { activeGames } from "./games";
 import { todayInSeoul, quarterKeyOf, addDaysToIsoDate } from "./time";
+import { computePeakBalances } from "./settle";
 
 export interface ParticipantLike {
   id: string;
@@ -962,6 +963,36 @@ export function computeRecords(
     lowestNetPoints: topTiers(netPointsEntries, 3, "asc"),
     mostGamesInOneDay: topTiers(dayGameCountEntries),
   };
+}
+
+/**
+ * "역대 최고 채권 보유" — the highest positive balance ("채권", points owed
+ * TO them) any participant ever held, not their current balance. A balance
+ * that climbed to 20 and later settled back down to 19 must still show 20
+ * here. Needs settlements/adjustments on top of games (unlike the rest of
+ * computeRecords, which is deliberately games-only — see its own doc
+ * comment), so this stays a separate function rather than folding into
+ * RecordsSummary. The actual peak-tracking lives in settle.ts's
+ * computePeakBalances (same chronological/createdAt basis as the streak
+ * records above); this just shapes that into a RecordTier[] via the same
+ * topTiers ranking every other career record uses.
+ */
+export function computeHighestBalanceRecord(
+  participants: ParticipantLike[],
+  games: GameResult[],
+  settlements: Settlement[],
+  adjustments: LedgerAdjustment[]
+): RecordTier[] {
+  const nameOf = new Map(participants.map((p) => [p.id, p.name]));
+  const peaks = computePeakBalances(games, settlements, adjustments);
+  const entries: RecordTierEntry[] = Array.from(peaks.entries()).map(([id, p]) => ({
+    id,
+    name: nameOf.get(id) ?? "(삭제된 참가자)",
+    value: p.peak,
+    startDate: p.date,
+    endDate: p.date,
+  }));
+  return topTiers(entries);
 }
 
 export type PeriodGrouping = "day" | "week" | "month" | "year";

@@ -1,6 +1,6 @@
 // Quick standalone sanity check for the debt-simplification algorithm.
 // Run with: npx tsx scripts/verify-settle.ts
-import { simplifyDebts, computeNetBalances } from "../src/lib/settle";
+import { simplifyDebts, computeNetBalances, computePeakBalances } from "../src/lib/settle";
 import { computeDailySequenceNumbers } from "../src/lib/games";
 import { computeParticipantStats, computeHeadToHead } from "../src/lib/stats";
 import { GameResult, Settlement, LedgerAdjustment } from "../src/lib/types";
@@ -320,5 +320,54 @@ assert(
 );
 assert(formatBalance(5) === "+5점", `case15c: formatBalance(5) should be "+5점", got "${formatBalance(5)}"`);
 assert(formatBalance(-5) === "-5점", `case15c: formatBalance(-5) should be "-5점", got "${formatBalance(-5)}"`);
+
+// Case 16 ("역대 최고 채권 보유"): a balance that once reached 20 and later
+// settled back down to 19 must still record a peak of 20, not 19 — the
+// whole point of computePeakBalances vs. computeNetBalances. The settlement
+// is deliberately listed BEFORE the game in the input arrays to prove the
+// function sorts by createdAt itself rather than trusting array order.
+{
+  const games: GameResult[] = [
+    {
+      id: "g1",
+      date: "2026-03-01",
+      attendeeIds: ["A", "B"],
+      winnerId: "A",
+      loserId: "B",
+      points: 20,
+      createdAt: "2026-03-01T10:00:00.000Z",
+    },
+  ];
+  const settlements: Settlement[] = [
+    {
+      id: "s1",
+      type: "payment",
+      fromId: "B", // B is the debtor, paying A (the creditor) back
+      toId: "A",
+      amount: 1,
+      date: "2026-03-02",
+      createdAt: "2026-03-02T10:00:00.000Z",
+    },
+  ];
+  const peaks = computePeakBalances(games, settlements, []);
+  const finalBalances = computeNetBalances(games, settlements, []);
+
+  assert(
+    peaks.get("A")?.peak === 20,
+    `case16: A's balance reached 20 before being partially paid down — peak should stay 20, got ${peaks.get("A")?.peak}`
+  );
+  assert(
+    peaks.get("A")?.date === "2026-03-01",
+    `case16: A's peak should be dated to the game that caused it (2026-03-01), got ${peaks.get("A")?.date}`
+  );
+  assert(
+    finalBalances.get("A") === 19,
+    `case16: A's CURRENT balance should be 19 (peak already settled down), got ${finalBalances.get("A")} — confirms peak and current are genuinely different numbers`
+  );
+  assert(
+    !peaks.has("B"),
+    `case16: B's balance was always negative (-20 then -19) and never positive — B should have no 채권 record at all, got ${JSON.stringify(peaks.get("B"))}`
+  );
+}
 
 console.log("Done.");

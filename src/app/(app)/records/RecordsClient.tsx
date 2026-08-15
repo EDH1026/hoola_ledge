@@ -11,8 +11,9 @@ import {
   CartesianGrid,
   ReferenceLine,
   ReferenceArea,
+  LabelList,
 } from "recharts";
-import { GAME_TYPE_LABELS, GAME_TYPES, GameResult } from "@/lib/types";
+import { GAME_TYPE_LABELS, GAME_TYPES, GameResult, Settlement, LedgerAdjustment } from "@/lib/types";
 import { TierBadge } from "@/components/badges";
 import { Card } from "@/components/ui/Card";
 import { SectionTitle } from "@/components/ui/SectionTitle";
@@ -26,6 +27,7 @@ import {
   computeQuarterlyTiers,
   computeStyleMap,
   computeRecords,
+  computeHighestBalanceRecord,
   GameTypeFilter,
   RecordTier,
   RecordTierEntry,
@@ -96,9 +98,13 @@ function tierDelta(row: TierRow): TierDelta {
 export default function RecordsClient({
   participants,
   games,
+  settlements,
+  adjustments,
 }: {
   participants: ParticipantLite[];
   games: GameResult[];
+  settlements: Settlement[];
+  adjustments: LedgerAdjustment[];
 }) {
   // v2.19 (배치 B, PRD §24.12) — 필터를 URL로 동기화한다. 티어와 성향 맵의
   // 종목 탭은 의도적으로 독립 유지한다(둘이 서로 다른 종목을 보고 싶을
@@ -183,6 +189,13 @@ export default function RecordsClient({
 
   // 명예의 전당은 항상 통산(전체 기간·전체 종목) 기준 — 필터를 타지 않는다.
   const records = useMemo(() => computeRecords(participants, games), [participants, games]);
+  // 역대 최고 채권 보유 — computeRecords와 달리 정산·과거 조정까지 반영해야
+  // 하므로 별도 계산. "지금" 잔액이 아니라 "한 번이라도" 도달했던 최고
+  // 잔액이라 settlements/adjustments를 시간순으로 재생해야 한다.
+  const highestBalance = useMemo(
+    () => computeHighestBalanceRecord(participants, games, settlements, adjustments),
+    [participants, games, settlements, adjustments]
+  );
 
   return (
     <div className="space-y-6">
@@ -324,6 +337,11 @@ export default function RecordsClient({
             tiers={records.mostGamesInOneDay}
             unit="게임"
           />
+          <RecordCategory
+            label="역대 최고 채권 보유"
+            tiers={highestBalance}
+            unit="점"
+          />
         </div>
       </Card>
     </div>
@@ -449,11 +467,10 @@ function StyleMapTooltip({
  * PRD §16.8 fixed-domain scatter — X=적극성(ENG), Y=손익(PERF), never auto-scales.
  *
  * v2.19 (배치 C, PRD §24.13) 조정:
- *  - 이름 라벨(LabelList)을 제거했다. 도메인이 고정이라 값이 대부분 (1.0, 0)
- *    근처에 몰리는데 충돌 회피 로직 없이 8명분 라벨이 겹쳤다. 대신 점 자체를
- *    참가자 색으로 구분하고(다음 절), 정확한 이름·수치는 이미 있던
- *    Tooltip으로 탭해서 본다 — "숨기고 탭 시 표시"로 가는 PRD의 대안을
- *    그대로 쓴 것.
+ *  - 이름 라벨(LabelList)은 점 위에 항상 표시한다. 도메인이 고정이라 값이
+ *    대부분 (1.0, 0) 근처에 몰려 라벨 몇 개는 겹칠 수 있지만, 이름을 보려면
+ *    매번 탭해야 하는 것보다는 낫다는 피드백에 따라 되돌렸다 — 정확한
+ *    수치는 여전히 Tooltip으로 탭해서 본다.
  *  - 사분면 배경 fillOpacity 0.06→0.13(사실상 안 보이던 수준을 올림), 라벨
  *    색을 승/패 색(빨강 쪽 3.7:1로 AA 미달) 대신 content-sub 계열
  *    #cbd5e1(다크 배경 대비 ~11:1)로 통일.
@@ -509,7 +526,9 @@ function StyleMapChart({
                 colorMap={colorMap}
               />
             )}
-          />
+          >
+            <LabelList dataKey="name" position="top" style={{ fontSize: 11, fill: "#e2e8f0" }} />
+          </Scatter>
         </ScatterChart>
       </ResponsiveContainer>
     </div>
