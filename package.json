@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "verify:tiers": "npx tsx scripts/verify-tiers.ts",
+    "verify:design": "npx tsx scripts/verify-design-tokens.ts",
     "verify:business-day": "npx tsx scripts/verify-business-day.ts",
     "backfill:business-day": "npx tsx scripts/backfill-business-day.ts"
   },
@@ -18,7 +19,9 @@
     "@supabase/supabase-js": "^2.112.3",
     "@vercel/blob": "^2.8.0",
     "date-fns": "^4.4.0",
+    "lucide-react": "^1.31.0",
     "next": "16.3.0",
+    "pretendard": "^1.3.9",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "recharts": "^3.10.1",

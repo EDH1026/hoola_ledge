@@ -1,5 +1,17 @@
 import type { Metadata } from "next";
+import localFont from "next/font/local";
 import "./globals.css";
+
+// Self-hosted (not a CDN @import) so the font loads from the same origin as
+// everything else — no third-party request, no FOUC waiting on an external
+// stylesheet. `display: "swap"` shows the fallback stack immediately and
+// swaps in Pretendard once it's ready, so first paint is never blocked on it.
+const pretendard = localFont({
+  src: "../../node_modules/pretendard/dist/web/variable/woff2/PretendardVariable.woff2",
+  variable: "--font-pretendard",
+  display: "swap",
+  weight: "45 920",
+});
 
 export const metadata: Metadata = {
   title: "게임 장부",
@@ -12,8 +24,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ko" className="h-full antialiased">
-      <body className="min-h-full flex flex-col bg-slate-950 text-slate-100">
+    <html lang="ko" className={`h-full antialiased ${pretendard.variable}`}>
+      <body className="min-h-full flex flex-col bg-background text-foreground">
         {children}
       </body>
     </html>

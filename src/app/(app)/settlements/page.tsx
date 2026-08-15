@@ -9,6 +9,11 @@ import { normalizeSettlementType } from "@/lib/types";
 import { filterByDatePreset, RangePreset } from "@/lib/stats";
 import { ADMIN_COOKIE_NAME, verifyAdminCookie } from "@/lib/auth";
 import { isWithinEditWindow } from "@/lib/time";
+import { Card } from "@/components/ui/Card";
+import { SectionTitle } from "@/components/ui/SectionTitle";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Button } from "@/components/ui/Button";
+import { filterChipClassName } from "@/components/ui/FilterChip";
 import SettlementsClient from "./SettlementsClient";
 
 export const dynamic = "force-dynamic";
@@ -138,31 +143,33 @@ export default async function SettlementsPage({
     .slice(0, 5);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">정산</h1>
-        <p className="text-sm text-slate-400 mt-1">
+        <h1 className="text-2xl font-bold text-content">정산</h1>
+        <p className="text-sm text-content-muted mt-1">
           그동안 쌓인 채권-채무 관계를 최소 거래 수로 간소화해서 보여줍니다. 실제로
           점수를 상품으로 교환했다면 아래에서 정산 완료 처리를, 그냥 누군가에게
           점수를 주고 싶다면 기부로 기록해주세요.
         </p>
       </div>
 
-      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
-        <h2 className="font-semibold mb-4">참가자별 순 잔액</h2>
+      <Card>
+        <SectionTitle>참가자별 순 잔액</SectionTitle>
         {balanceList.length === 0 ? (
-          <p className="text-sm text-slate-500">잔액이 없습니다.</p>
+          <div className="mt-4">
+            <EmptyState title="잔액이 없습니다." />
+          </div>
         ) : (
-          <ul className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <ul className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-4 tabular-nums">
             {balanceList.map((b) => (
               <li
                 key={b.id}
-                className="flex items-center justify-between rounded-lg bg-slate-800 px-3 py-2 text-sm"
+                className="flex items-center justify-between rounded-lg bg-surface-raised px-3 py-2 text-sm"
               >
-                <span>{b.name}</span>
+                <span className="text-content">{b.name}</span>
                 <span
                   className={`font-semibold ${
-                    b.amount > 0 ? "text-emerald-400" : "text-red-500"
+                    b.amount > 0 ? "text-emerald-400" : "text-lose"
                   }`}
                 >
                   {b.amount > 0 ? "+" : ""}
@@ -172,59 +179,58 @@ export default async function SettlementsPage({
             ))}
           </ul>
         )}
-        <p className="text-xs text-slate-500 mt-3">
+        <p className="text-xs text-content-muted mt-3">
           양수(+)는 받을 점수, 음수(-)는 줘야 할 점수입니다. 게임·정산·기부·
           <Link href="/adjustments" className="underline">
             과거 누적기록
           </Link>
           이 모두 반영된 값입니다.
         </p>
-      </section>
+      </Card>
 
       <SettlementsClient
         transactions={transactions}
         participants={participants.map((p) => ({ id: p.id, name: p.name }))}
       />
 
-      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <h2 className="font-semibold">기부 랭킹</h2>
-          <div className="flex gap-1">
-            {DONATION_RANGE_OPTIONS.map((opt) => {
-              const params = new URLSearchParams();
-              if (filter !== "all") params.set("filter", filter);
-              if (opt.value !== "all") params.set("donationRange", opt.value);
-              const qs = params.toString();
-              return (
-                <Link
-                  key={opt.value}
-                  href={qs ? `/settlements?${qs}` : "/settlements"}
-                  className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
-                    donationRange === opt.value
-                      ? "bg-slate-100 text-slate-900"
-                      : "bg-slate-800 text-slate-300 hover:bg-slate-600"
-                  }`}
-                >
-                  {opt.label}
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
+      <Card>
+        <SectionTitle
+          action={
+            <div className="flex gap-2">
+              {DONATION_RANGE_OPTIONS.map((opt) => {
+                const params = new URLSearchParams();
+                if (filter !== "all") params.set("filter", filter);
+                if (opt.value !== "all") params.set("donationRange", opt.value);
+                const qs = params.toString();
+                return (
+                  <Link
+                    key={opt.value}
+                    href={qs ? `/settlements?${qs}` : "/settlements"}
+                    className={filterChipClassName(donationRange === opt.value)}
+                  >
+                    {opt.label}
+                  </Link>
+                );
+              })}
+            </div>
+          }
+        >
+          기부 랭킹
+        </SectionTitle>
+        <div className="grid gap-4 sm:grid-cols-2 mt-4">
           <div>
-            <h3 className="text-xs font-medium text-slate-500 mb-2">
+            <h3 className="text-xs font-medium text-content-muted mb-2">
               가장 많이 기부한 사람
             </h3>
             {topGivers.length === 0 ? (
-              <p className="text-sm text-slate-500">기부 기록이 없습니다.</p>
+              <EmptyState title="기부 기록이 없습니다." />
             ) : (
-              <ul className="space-y-1.5">
+              <ul className="space-y-1.5 tabular-nums">
                 {topGivers.map((g, i) => (
                   <li key={g.id} className="flex items-center justify-between text-sm">
                     <span className="flex items-center gap-2">
-                      <span className="w-4 text-slate-500">{i + 1}</span>
-                      <span className="font-medium">{g.name}</span>
+                      <span className="w-4 text-content-faint">{i + 1}</span>
+                      <span className="font-medium text-content">{g.name}</span>
                     </span>
                     <span className="font-semibold text-amber-300">{g.amount}점</span>
                   </li>
@@ -233,18 +239,18 @@ export default async function SettlementsPage({
             )}
           </div>
           <div>
-            <h3 className="text-xs font-medium text-slate-500 mb-2">
+            <h3 className="text-xs font-medium text-content-muted mb-2">
               가장 많이 받은 사람
             </h3>
             {topReceivers.length === 0 ? (
-              <p className="text-sm text-slate-500">기부 기록이 없습니다.</p>
+              <EmptyState title="기부 기록이 없습니다." />
             ) : (
-              <ul className="space-y-1.5">
+              <ul className="space-y-1.5 tabular-nums">
                 {topReceivers.map((r, i) => (
                   <li key={r.id} className="flex items-center justify-between text-sm">
                     <span className="flex items-center gap-2">
-                      <span className="w-4 text-slate-500">{i + 1}</span>
-                      <span className="font-medium">{r.name}</span>
+                      <span className="w-4 text-content-faint">{i + 1}</span>
+                      <span className="font-medium text-content">{r.name}</span>
                     </span>
                     <span className="font-semibold text-amber-300">{r.amount}점</span>
                   </li>
@@ -253,44 +259,43 @@ export default async function SettlementsPage({
             )}
           </div>
         </div>
-      </section>
+      </Card>
 
-      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
-          <h2 className="font-semibold">정산 & 조정 이력 ({history.length}건)</h2>
-          <div className="flex gap-1">
-            {FILTER_OPTIONS.map((opt) => (
-              <Link
-                key={opt.value}
-                href={
-                  opt.value === "all"
-                    ? "/settlements"
-                    : `/settlements?filter=${opt.value}`
-                }
-                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
-                  filter === opt.value
-                    ? "bg-slate-100 text-slate-900"
-                    : "bg-slate-800 text-slate-300 hover:bg-slate-600"
-                }`}
-              >
-                {opt.label}
-              </Link>
-            ))}
-          </div>
-        </div>
-        <p className="text-xs text-slate-500 mb-3">
-          기록 후 2시간이 지난 항목은 관리자만 취소할 수 있습니다.
-        </p>
+      <Card>
+        <SectionTitle
+          description="기록 후 2시간이 지난 항목은 관리자만 취소할 수 있습니다."
+          action={
+            <div className="flex gap-2">
+              {FILTER_OPTIONS.map((opt) => (
+                <Link
+                  key={opt.value}
+                  href={
+                    opt.value === "all"
+                      ? "/settlements"
+                      : `/settlements?filter=${opt.value}`
+                  }
+                  className={filterChipClassName(filter === opt.value)}
+                >
+                  {opt.label}
+                </Link>
+              ))}
+            </div>
+          }
+        >
+          정산 & 조정 이력 ({history.length}건)
+        </SectionTitle>
         {history.length === 0 ? (
-          <p className="text-sm text-slate-500">해당하는 이력이 없습니다.</p>
+          <div className="mt-4">
+            <EmptyState title="해당하는 이력이 없습니다." />
+          </div>
         ) : (
-          <ul className="divide-y divide-slate-800">
+          <ul className="divide-y divide-line mt-3">
             {history.map((row) => (
               <li
                 key={`${row.kind}-${row.id}`}
                 className="py-2.5 flex flex-wrap items-center gap-3 text-sm"
               >
-                <span className="text-slate-500 w-24 shrink-0">
+                <span className="text-content-muted w-24 shrink-0 tabular-nums">
                   {format(new Date(row.date), "yyyy-MM-dd")}
                 </span>
                 {row.kind === "settlement" ? (
@@ -298,13 +303,13 @@ export default async function SettlementsPage({
                 ) : (
                   <LedgerAdjustmentBadge />
                 )}
-                <span className="flex-1 min-w-[140px]">
-                  <span className="font-medium">{nameOf(row.fromId)}</span>
-                  <span className="text-slate-500 mx-1">→</span>
-                  <span className="font-medium">{nameOf(row.toId)}</span>
-                  <span className="text-slate-400 ml-2">{row.amount}점</span>
+                <span className="flex-1 min-w-[140px] tabular-nums">
+                  <span className="font-medium text-content">{nameOf(row.fromId)}</span>
+                  <span className="text-content-faint mx-1">→</span>
+                  <span className="font-medium text-content">{nameOf(row.toId)}</span>
+                  <span className="text-content-muted ml-2">{row.amount}점</span>
                   {row.note && (
-                    <span className="text-xs text-slate-500 ml-2">
+                    <span className="text-xs text-content-muted ml-2">
                       ({row.note})
                     </span>
                   )}
@@ -312,19 +317,16 @@ export default async function SettlementsPage({
                 {row.kind === "settlement" &&
                   (isAdmin || isWithinEditWindow(row.createdAt)) && (
                     <form action={deleteSettlement.bind(null, row.id)}>
-                      <button
-                        type="submit"
-                        className="text-xs text-slate-600 hover:text-red-400"
-                      >
+                      <Button type="submit" variant="danger" size="sm">
                         취소
-                      </button>
+                      </Button>
                     </form>
                   )}
               </li>
             ))}
           </ul>
         )}
-      </section>
+      </Card>
     </div>
   );
 }

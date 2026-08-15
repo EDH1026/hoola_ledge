@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Card } from "@/components/ui/Card";
 
 // v2.19 — a month-grid picker for /games, so finding "that one game night"
 // doesn't require guessing the exact 연/월/일 dropdown values. Days that
@@ -93,24 +94,24 @@ export default function GameCalendar({
   ];
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
+    <Card padding="sm">
       <div className="flex items-center justify-between mb-2">
         <button
           type="button"
           onClick={() => goToMonth(cursorYear, cursorMonth - 1)}
           aria-label="이전 달"
-          className="w-7 h-7 rounded-lg text-slate-400 hover:bg-slate-700 flex items-center justify-center"
+          className="w-7 h-7 rounded-lg text-content-muted hover:bg-slate-700 hover:text-content flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
         >
           ‹
         </button>
-        <span className="text-sm font-semibold">
+        <span className="text-sm font-semibold text-content">
           {cursorYear}년 {cursorMonth}월
         </span>
         <button
           type="button"
           onClick={() => goToMonth(cursorYear, cursorMonth + 1)}
           aria-label="다음 달"
-          className="w-7 h-7 rounded-lg text-slate-400 hover:bg-slate-700 flex items-center justify-center"
+          className="w-7 h-7 rounded-lg text-content-muted hover:bg-slate-700 hover:text-content flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
         >
           ›
         </button>
@@ -118,13 +119,13 @@ export default function GameCalendar({
 
       <div className="grid grid-cols-7 gap-1 mb-1">
         {WEEKDAY_LABELS.map((w) => (
-          <span key={w} className="text-center text-[11px] text-slate-500">
+          <span key={w} className="text-center text-[11px] text-content-muted">
             {w}
           </span>
         ))}
       </div>
 
-      <div className="grid grid-cols-7 gap-1">
+      <div className="grid grid-cols-7 gap-1 tabular-nums">
         {cells.map((date, i) => {
           if (!date) return <span key={`blank-${i}`} />;
           const hasGame = gameDates.has(date);
@@ -137,12 +138,12 @@ export default function GameCalendar({
               disabled={!hasGame}
               onClick={() => pickDate(date)}
               title={hasGame ? `${date} 게임 기록 있음` : undefined}
-              className={`rounded-lg py-1.5 text-xs transition ${
+              className={`rounded-lg py-1.5 text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${
                 isSelected
-                  ? "bg-slate-100 text-slate-900 font-semibold"
+                  ? "bg-slate-700 text-content font-semibold ring-1 ring-slate-500"
                   : hasGame
                   ? "bg-emerald-500/10 text-emerald-300 font-medium hover:bg-emerald-500/20"
-                  : "text-slate-600 cursor-default"
+                  : "text-content-faint cursor-default"
               } ${isToday && !isSelected ? "ring-1 ring-inset ring-slate-500" : ""}`}
             >
               {Number(date.slice(8, 10))}
@@ -151,12 +152,12 @@ export default function GameCalendar({
         })}
       </div>
 
-      <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-800">
+      <div className="flex items-center justify-between mt-3 pt-3 border-t border-line">
         <button
           type="button"
           onClick={() => jumpToAdjacentGameDay("prev")}
           disabled={!hasPrevGameDay}
-          className="text-xs font-medium text-slate-300 hover:text-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
+          className="text-xs font-medium text-content-sub hover:text-content disabled:text-content-faint disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface rounded"
         >
           ← 이전 게임일
         </button>
@@ -164,11 +165,11 @@ export default function GameCalendar({
           type="button"
           onClick={() => jumpToAdjacentGameDay("next")}
           disabled={!hasNextGameDay}
-          className="text-xs font-medium text-slate-300 hover:text-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
+          className="text-xs font-medium text-content-sub hover:text-content disabled:text-content-faint disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface rounded"
         >
           다음 게임일 →
         </button>
       </div>
-    </div>
+    </Card>
   );
 }

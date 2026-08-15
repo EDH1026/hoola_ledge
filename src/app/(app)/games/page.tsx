@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { listParticipants, listGames } from "@/lib/storage";
 import { activeGames, computeDailySequenceNumbers } from "@/lib/games";
 import { ADMIN_COOKIE_NAME, verifyAdminCookie } from "@/lib/auth";
+import { buttonClassName } from "@/components/ui/Button";
 import GamesListClient from "./GamesListClient";
 
 export const dynamic = "force-dynamic";
@@ -28,13 +29,10 @@ export default async function GamesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">게임 기록</h1>
-          <p className="text-sm text-slate-400 mt-1">총 {activeOnly.length}회</p>
+          <h1 className="text-2xl font-bold text-content">게임 기록</h1>
+          <p className="text-sm text-content-muted mt-1 tabular-nums">총 {activeOnly.length}회</p>
         </div>
-        <Link
-          href="/games/new"
-          className="rounded-lg bg-slate-100 text-slate-900 text-sm font-medium px-4 py-2 hover:bg-slate-300 transition"
-        >
+        <Link href="/games/new" className={buttonClassName("primary")}>
           + 새 게임 기록
         </Link>
       </div>

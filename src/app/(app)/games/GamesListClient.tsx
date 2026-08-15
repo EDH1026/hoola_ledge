@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { format } from "date-fns";
+import { Check } from "lucide-react";
 import { deleteGame, hardDeleteGame, updateGame } from "@/lib/actions";
 import { isActiveGame, withinDayKey } from "@/lib/games";
 import {
@@ -18,6 +19,10 @@ import {
 } from "@/lib/types";
 import { GameTypeBadge, InactiveBadge, GameNightBadge } from "@/components/badges";
 import { computeParticipantPointTotals } from "@/lib/stats";
+import { Card } from "@/components/ui/Card";
+import { SectionTitle } from "@/components/ui/SectionTitle";
+import { Button } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/EmptyState";
 import GameCalendar from "./GameCalendar";
 
 interface ParticipantLite {
@@ -149,14 +154,14 @@ export default function GamesListClient({
 
   return (
     <div className="space-y-4">
-      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-4">
+      <Card padding="sm">
         <div className="flex flex-wrap items-end gap-4">
           <div>
-            <span className="text-xs text-slate-500 block mb-1">연도</span>
+            <span className="text-xs text-content-muted block mb-1">연도</span>
             <select
               value={year}
               onChange={(e) => setYear(e.target.value)}
-              className="bg-slate-900 rounded-lg border border-slate-700 px-2 py-1.5 text-sm"
+              className="bg-surface rounded-lg border border-slate-700 px-2 py-1.5 text-sm text-content"
             >
               <option value="all">전체</option>
               {years.map((y) => (
@@ -167,11 +172,11 @@ export default function GamesListClient({
             </select>
           </div>
           <div>
-            <span className="text-xs text-slate-500 block mb-1">월</span>
+            <span className="text-xs text-content-muted block mb-1">월</span>
             <select
               value={month}
               onChange={(e) => setMonth(e.target.value)}
-              className="bg-slate-900 rounded-lg border border-slate-700 px-2 py-1.5 text-sm"
+              className="bg-surface rounded-lg border border-slate-700 px-2 py-1.5 text-sm text-content"
             >
               <option value="all">전체</option>
               {MONTHS.map((m) => (
@@ -182,11 +187,11 @@ export default function GamesListClient({
             </select>
           </div>
           <div>
-            <span className="text-xs text-slate-500 block mb-1">일</span>
+            <span className="text-xs text-content-muted block mb-1">일</span>
             <select
               value={day}
               onChange={(e) => setDay(e.target.value)}
-              className="bg-slate-900 rounded-lg border border-slate-700 px-2 py-1.5 text-sm"
+              className="bg-surface rounded-lg border border-slate-700 px-2 py-1.5 text-sm text-content"
             >
               <option value="all">전체</option>
               {DAYS.map((d) => (
@@ -196,17 +201,17 @@ export default function GamesListClient({
               ))}
             </select>
           </div>
-          <div className="ml-auto text-sm text-slate-400 text-right">
+          <div className="ml-auto text-sm text-content-muted text-right tabular-nums">
             {activeFiltered.length}회 · 점수 합계{" "}
-            <span className="font-semibold text-slate-100">{pointsSum}점</span>
+            <span className="font-semibold text-content">{pointsSum}점</span>
             {isAdmin && inactiveCount > 0 && (
-              <span className="block text-xs text-slate-500 mt-0.5">
+              <span className="block text-xs text-content-muted mt-0.5">
                 (비활성 {inactiveCount}건은 집계에서 제외 · 목록에는 표시됨)
               </span>
             )}
           </div>
         </div>
-      </section>
+      </Card>
 
       <GameCalendar
         gameDates={gameDates}
@@ -215,17 +220,15 @@ export default function GamesListClient({
         today={today}
       />
 
-      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-4">
-        <h2 className="text-sm font-semibold mb-3">이 구간 인별 점수</h2>
+      <Card padding="sm">
+        <SectionTitle>이 구간 인별 점수</SectionTitle>
         {pointTotals.length === 0 ? (
-          <p className="text-sm text-slate-500">
-            이 구간에 집계할 게임이 없습니다.
-          </p>
+          <EmptyState title="이 구간에 집계할 게임이 없습니다." />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto mt-3">
+            <table className="w-full text-sm tabular-nums">
               <thead>
-                <tr className="text-left text-slate-500 text-xs">
+                <tr className="text-left text-content-muted text-xs">
                   <th className="py-1.5 pr-4">순위</th>
                   <th className="py-1.5 pr-4">이름</th>
                   <th className="py-1.5 pr-4">딴 점수</th>
@@ -235,18 +238,18 @@ export default function GamesListClient({
               </thead>
               <tbody>
                 {pointTotals.map((p, i) => (
-                  <tr key={p.id} className="border-t border-slate-800">
-                    <td className="py-1.5 pr-4 text-slate-500">{i + 1}</td>
-                    <td className="py-1.5 pr-4 font-medium">{p.name}</td>
+                  <tr key={p.id} className="border-t border-line">
+                    <td className="py-1.5 pr-4 text-content-faint">{i + 1}</td>
+                    <td className="py-1.5 pr-4 font-medium text-content">{p.name}</td>
                     <td className="py-1.5 pr-4 text-emerald-400">{p.pointsWon}</td>
-                    <td className="py-1.5 pr-4 text-red-500">{p.pointsLost}</td>
+                    <td className="py-1.5 pr-4 text-lose">{p.pointsLost}</td>
                     <td
                       className={`py-1.5 pr-4 font-semibold ${
                         p.netPoints > 0
                           ? "text-emerald-400"
                           : p.netPoints < 0
-                          ? "text-red-500"
-                          : "text-slate-500"
+                          ? "text-lose"
+                          : "text-content-muted"
                       }`}
                     >
                       {p.netPoints > 0 ? "+" : ""}
@@ -258,15 +261,15 @@ export default function GamesListClient({
             </table>
           </div>
         )}
-      </section>
+      </Card>
 
-      <section className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden">
+      <div className="rounded-2xl border border-line bg-surface overflow-hidden">
         {filtered.length === 0 ? (
-          <p className="text-sm text-slate-500 p-5">
-            조건에 맞는 게임 기록이 없습니다.
-          </p>
+          <div className="p-5">
+            <EmptyState title="조건에 맞는 게임 기록이 없습니다." />
+          </div>
         ) : (
-          <ul className="divide-y divide-slate-800">
+          <ul className="divide-y divide-line">
             {filtered.map((g) => {
               const seq = sequenceNumbers[g.id];
               const attendeeNames = g.attendeeIds.map(
@@ -289,10 +292,15 @@ export default function GamesListClient({
               const canEdit = isAdmin || (!inactive && editableByUser);
               const canDelete = !inactive && (isAdmin || editableByUser);
               return (
-                <li key={g.id} className={`p-4 space-y-2 ${inactive ? "bg-slate-800" : ""}`}>
+                <li
+                  key={g.id}
+                  className={`p-4 space-y-2 ${
+                    inactive ? "border-l-2 border-slate-500 bg-surface-raised/50" : ""
+                  }`}
+                >
                   <div className="flex flex-wrap items-center gap-2 justify-between">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm text-slate-500 whitespace-nowrap">
+                      <span className="text-sm text-content-muted whitespace-nowrap tabular-nums">
                         {format(new Date(wallClock.date), "yyyy-MM-dd")}
                         {wallClock.time ? ` ${wallClock.time}` : ""}
                         {seq ? ` · ${seq}차전` : ""}
@@ -309,55 +317,59 @@ export default function GamesListClient({
                           <span className="text-red-300 font-medium">
                             완전 삭제할까요? 되돌릴 수 없습니다.
                           </span>
-                          <button
-                            type="button"
+                          <Button
+                            variant="danger"
+                            size="sm"
                             onClick={() => handleHardDelete(g.id)}
                             disabled={isHardDeleting}
-                            className="text-red-300 font-semibold hover:underline disabled:opacity-50"
+                            pending={isHardDeleting}
+                            pendingText="삭제 중..."
                           >
-                            {isHardDeleting ? "삭제 중..." : "확인"}
-                          </button>
-                          <button
-                            type="button"
+                            확인
+                          </Button>
+                          <Button
+                            variant="neutral"
+                            size="sm"
                             onClick={() => setConfirmHardDeleteId(null)}
                             disabled={isHardDeleting}
-                            className="text-slate-500 hover:text-slate-200"
                           >
                             취소
-                          </button>
+                          </Button>
                         </span>
                       ) : (
                         <>
                           {canEdit && (
-                            <button
-                              type="button"
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               onClick={() => setEditingId(isEditing ? null : g.id)}
-                              className="text-xs font-medium text-slate-400 hover:text-slate-100"
                             >
                               {isEditing ? "닫기" : "수정"}
-                            </button>
+                            </Button>
                           )}
                           {canDelete && (
-                            <button
-                              type="button"
+                            <Button
+                              variant="danger"
+                              size="sm"
                               onClick={() => handleDelete(g.id)}
                               disabled={isPending && deletingId === g.id}
-                              className="text-xs text-slate-600 hover:text-red-400 disabled:opacity-50"
+                              pending={isPending && deletingId === g.id}
+                              pendingText="삭제 중..."
                             >
-                              {isPending && deletingId === g.id ? "삭제 중..." : "삭제"}
-                            </button>
+                              삭제
+                            </Button>
                           )}
                           {isAdmin && (
-                            <button
-                              type="button"
+                            <Button
+                              variant="danger"
+                              size="sm"
                               onClick={() => setConfirmHardDeleteId(g.id)}
-                              className="text-xs text-slate-600 hover:text-red-300"
                             >
                               완전삭제
-                            </button>
+                            </Button>
                           )}
                           {!canEdit && !canDelete && (
-                            <span className="text-xs text-slate-600">
+                            <span className="text-xs text-content-muted">
                               기록 후 2시간이 지나 수정·삭제할 수 없습니다.
                             </span>
                           )}
@@ -368,24 +380,24 @@ export default function GamesListClient({
                   {deleteError?.id === g.id && (
                     <p className="text-xs text-red-400">{deleteError.message}</p>
                   )}
-                  <div className={`text-sm ${inactive ? "opacity-60" : ""}`}>
+                  <div className="text-sm tabular-nums">
                     <span className="font-semibold text-emerald-400">
                       {nameMap.get(g.winnerId) ?? "(삭제됨)"}
                     </span>
-                    <span className="text-slate-500 mx-1.5">Win · Lose</span>
-                    <span className="font-semibold text-red-500">
+                    <span className="text-content-muted mx-1.5">Win · Lose</span>
+                    <span className="font-semibold text-lose">
                       {nameMap.get(g.loserId) ?? "(삭제됨)"}
                     </span>
-                    <span className="text-xs text-slate-500 ml-2">
+                    <span className="text-xs text-content-muted ml-2">
                       · {points}점
                     </span>
                     {g.note && (
-                      <span className="text-xs text-slate-500 ml-2">
+                      <span className="text-xs text-content-muted ml-2">
                         · {g.note}
                       </span>
                     )}
                   </div>
-                  <p className={`text-xs ${inactive ? "text-slate-600" : "text-slate-500"}`}>
+                  <p className="text-xs text-content-muted">
                     참석 {g.attendeeIds.length}명 · {attendeeNames.join(", ")}
                   </p>
 
@@ -405,7 +417,7 @@ export default function GamesListClient({
             })}
           </ul>
         )}
-      </section>
+      </div>
     </div>
   );
 }
@@ -422,27 +434,19 @@ function DiffRow({
   const changed = before !== after;
   return (
     <div className="text-sm flex flex-wrap gap-x-2">
-      <span className="text-slate-500 w-16 shrink-0">{label}</span>
+      <span className="text-content-muted w-16 shrink-0">{label}</span>
       {changed ? (
         <span>
-          <span className="text-slate-500 line-through decoration-slate-300">
+          <span className="text-content-muted line-through decoration-content-faint">
             {before}
           </span>
-          <span className="text-slate-500 mx-1.5">→</span>
-          <span className="font-semibold text-slate-100">{after}</span>
+          <span className="text-content-faint mx-1.5">→</span>
+          <span className="font-semibold text-content">{after}</span>
         </span>
       ) : (
-        <span className="text-slate-300">{before}</span>
+        <span className="text-content-sub">{before}</span>
       )}
     </div>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="w-4 h-4 fill-current shrink-0">
-      <path d="M13.7 3.3a1 1 0 0 1 0 1.4l-7 7a1 1 0 0 1-1.4 0l-3-3a1 1 0 1 1 1.4-1.4L6 9.6l6.3-6.3a1 1 0 0 1 1.4 0Z" />
-    </svg>
   );
 }
 
@@ -569,8 +573,8 @@ function GameEditForm({
 
   if (step === "confirm") {
     return (
-      <div className="rounded-xl border-2 border-slate-100 bg-slate-900 p-4 space-y-2.5">
-        <h3 className="text-sm font-semibold mb-1">변경 내용 확인</h3>
+      <div className="rounded-xl border border-accent bg-surface p-4 space-y-2.5">
+        <h3 className="text-sm font-semibold text-content mb-1">변경 내용 확인</h3>
         <DiffRow label="종목" before={gameTypeLabel(game.gameType)} after={gameTypeLabel(gameType)} />
         <DiffRow
           label="참가자"
@@ -609,27 +613,22 @@ function GameEditForm({
             type="button"
             onClick={handleSave}
             disabled={isSaving}
-            className="rounded-lg bg-emerald-600 text-white text-sm font-medium px-4 py-2 hover:bg-emerald-700 transition disabled:opacity-50"
+            className="min-h-9 rounded-lg bg-emerald-600 text-white text-sm font-medium px-4 transition active:scale-[0.97] hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:opacity-50 disabled:pointer-events-none"
           >
             {isSaving ? "저장 중..." : "이대로 저장"}
           </button>
-          <button
-            type="button"
-            onClick={() => setStep("form")}
-            disabled={isSaving}
-            className="rounded-lg bg-slate-800 text-slate-300 text-sm font-medium px-4 py-2 hover:bg-slate-600 transition"
-          >
+          <Button variant="neutral" size="sm" onClick={() => setStep("form")} disabled={isSaving}>
             돌아가기
-          </button>
+          </Button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-slate-700 bg-slate-800 p-4 space-y-4">
+    <div className="rounded-xl border border-slate-700 bg-surface-raised p-4 space-y-4">
       <div>
-        <span className="text-xs text-slate-400 block mb-1.5">종목</span>
+        <span className="text-xs text-content-muted block mb-1.5">종목</span>
         <div className="grid grid-cols-3 gap-2">
           {GAME_TYPES.map((gt) => {
             const selected = gameType === gt;
@@ -638,13 +637,13 @@ function GameEditForm({
                 key={gt}
                 type="button"
                 onClick={() => setGameType(gt)}
-                className={`flex items-center justify-center gap-1.5 rounded-lg border-2 px-3 py-2 text-sm font-medium transition ${
+                className={`flex items-center justify-center gap-1.5 rounded-lg border-2 px-3 py-2 text-sm font-medium transition active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${
                   selected
                     ? "border-emerald-600 bg-emerald-500/10 text-emerald-200"
-                    : "border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-700"
+                    : "border-line bg-surface text-content-sub hover:bg-slate-700"
                 }`}
               >
-                {selected && <CheckIcon />}
+                {selected && <Check className="w-4 h-4 shrink-0" />}
                 {GAME_TYPE_LABELS[gt]}
               </button>
             );
@@ -653,7 +652,7 @@ function GameEditForm({
       </div>
 
       <div>
-        <span className="text-xs text-slate-400 block mb-1.5">
+        <span className="text-xs text-content-muted block mb-1.5">
           참가자 ({attendeeIds.length}명)
         </span>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -665,7 +664,7 @@ function GameEditForm({
                 className={`flex items-center gap-2 rounded-lg border-2 px-3 py-2 text-sm cursor-pointer transition ${
                   checked
                     ? "border-emerald-600 bg-emerald-500/10 text-emerald-200"
-                    : "border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-700"
+                    : "border-line bg-surface text-content-sub hover:bg-slate-700"
                 }`}
               >
                 <input
@@ -678,10 +677,10 @@ function GameEditForm({
                   className={`flex items-center justify-center w-4 h-4 rounded-full border shrink-0 ${
                     checked
                       ? "border-emerald-600 bg-emerald-600 text-white"
-                      : "border-slate-700 bg-slate-900"
+                      : "border-slate-700 bg-surface"
                   }`}
                 >
-                  {checked && <CheckIcon />}
+                  {checked && <Check className="w-4 h-4 shrink-0" />}
                 </span>
                 {p.name}
               </label>
@@ -692,11 +691,11 @@ function GameEditForm({
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs text-slate-400 mb-1">Win</label>
+          <label className="block text-xs text-content-muted mb-1">Win</label>
           <select
             value={winnerId}
             onChange={(e) => setWinnerId(e.target.value)}
-            className="w-full rounded-lg border-2 border-emerald-800 bg-slate-900 px-2 py-1.5 text-sm"
+            className="w-full rounded-lg border-2 border-emerald-800 bg-surface px-2 py-1.5 text-sm text-content"
           >
             <option value="">선택</option>
             {selectableAttendees.map((p) => (
@@ -707,11 +706,11 @@ function GameEditForm({
           </select>
         </div>
         <div>
-          <label className="block text-xs text-slate-400 mb-1">Lose</label>
+          <label className="block text-xs text-content-muted mb-1">Lose</label>
           <select
             value={loserId}
             onChange={(e) => setLoserId(e.target.value)}
-            className="w-full rounded-lg border-2 border-red-800 bg-slate-900 px-2 py-1.5 text-sm"
+            className="w-full rounded-lg border-2 border-red-800 bg-surface px-2 py-1.5 text-sm text-content"
           >
             <option value="">선택</option>
             {selectableAttendees.map((p) => (
@@ -725,12 +724,12 @@ function GameEditForm({
 
       <div className="flex gap-3 flex-wrap items-end">
         <div>
-          <label className="block text-xs text-slate-400 mb-1">점수</label>
+          <label className="block text-xs text-content-muted mb-1">점수</label>
           <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={() => setPoints((p) => Math.max(1, p - 1))}
-              className="w-8 h-8 rounded-lg border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-700 flex items-center justify-center"
+              className="w-8 h-8 rounded-lg border border-slate-700 bg-surface text-content-sub hover:bg-slate-700 flex items-center justify-center transition active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
               aria-label="점수 감소"
             >
               −
@@ -743,12 +742,12 @@ function GameEditForm({
               onChange={(e) =>
                 setPoints(Math.max(1, Math.round(Number(e.target.value) || 1)))
               }
-              className="w-14 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-center"
+              className="w-14 rounded-lg border border-slate-700 bg-surface px-2 py-1.5 text-sm text-center text-content tabular-nums"
             />
             <button
               type="button"
               onClick={() => setPoints((p) => p + 1)}
-              className="w-8 h-8 rounded-lg border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-700 flex items-center justify-center"
+              className="w-8 h-8 rounded-lg border border-slate-700 bg-surface text-content-sub hover:bg-slate-700 flex items-center justify-center transition active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
               aria-label="점수 증가"
             >
               +
@@ -756,13 +755,13 @@ function GameEditForm({
           </div>
         </div>
         <div className="flex-1 min-w-[160px]">
-          <label className="block text-xs text-slate-400 mb-1">메모 (선택)</label>
+          <label className="block text-xs text-content-muted mb-1">메모 (선택)</label>
           <input
             type="text"
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="예: 재대결"
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm"
+            className="w-full rounded-lg border border-slate-700 bg-surface px-3 py-1.5 text-sm text-content"
           />
         </div>
       </div>
@@ -771,23 +770,23 @@ function GameEditForm({
         <>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">
+              <label className="block text-xs text-content-muted mb-1">
                 날짜 (실제 게임한 날짜)
               </label>
               <input
                 type="date"
                 value={calendarDate}
                 onChange={(e) => setCalendarDate(e.target.value)}
-                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm"
+                className="w-full rounded-lg border border-slate-700 bg-surface px-2 py-1.5 text-sm text-content"
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">시간 (24시간제)</label>
+              <label className="block text-xs text-content-muted mb-1">시간 (24시간제)</label>
               <input
                 type="time"
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
-                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm"
+                className="w-full rounded-lg border border-slate-700 bg-surface px-2 py-1.5 text-sm text-content"
               />
             </div>
           </div>
@@ -803,14 +802,14 @@ function GameEditForm({
             </p>
           )}
 
-          <label className="flex items-center gap-2 text-sm text-slate-300">
+          <label className="flex items-center gap-2 text-sm text-content-sub">
             <input
               type="checkbox"
               checked={active}
               onChange={(e) => setActive(e.target.checked)}
             />
             활성 상태
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-content-muted">
               (해제 시 삭제된 것처럼 정산·통계에서 제외됩니다)
             </span>
           </label>
@@ -820,20 +819,12 @@ function GameEditForm({
       {error && <p className="text-sm text-red-400">{error}</p>}
 
       <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={handleReview}
-          className="rounded-lg bg-slate-100 text-slate-900 text-sm font-medium px-4 py-2 hover:bg-slate-300 transition"
-        >
+        <Button variant="primary" size="sm" onClick={handleReview}>
           변경 내용 확인
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-lg bg-slate-800 text-slate-300 text-sm font-medium px-4 py-2 hover:bg-slate-600 transition"
-        >
+        </Button>
+        <Button variant="neutral" size="sm" onClick={onCancel}>
           취소
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import { previewRollback, executeRollback, RollbackCounts } from "@/lib/actions";
 import { nowInSeoul, seoulLocalToUtcIso, formatInSeoul } from "@/lib/time";
+import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
 
 const CONFIRM_PHRASE = "삭제합니다";
 
@@ -56,9 +58,9 @@ export default function RollbackForm() {
   }
 
   return (
-    <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5 space-y-5">
+    <Card className="space-y-5">
       <div>
-        <label className="block text-xs text-slate-400 mb-1">
+        <label className="block text-xs text-content-muted mb-1">
           이 시각(KST) 이후에 생성된 기록을 삭제
         </label>
         <input
@@ -71,36 +73,37 @@ export default function RollbackForm() {
             setConfirmText("");
             setResult(null);
           }}
-          className="bg-slate-900 rounded-lg border border-slate-700 px-3 py-1.5 text-sm"
+          className="bg-surface rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-content"
         />
-        <p className="text-xs text-slate-500 mt-1">
+        <p className="text-xs text-content-muted mt-1">
           비교 기준(UTC): {thresholdIso} · 실제로는{" "}
-          <span className="font-medium">{formatInSeoul(thresholdIso)} (KST)</span>
+          <span className="font-medium text-content">{formatInSeoul(thresholdIso)} (KST)</span>
           {" "}이후에 생성된(createdAt 기준) 기록이 대상입니다.
         </p>
       </div>
 
-      <button
-        type="button"
+      <Button
+        variant="primary"
         onClick={handlePreview}
         disabled={isPending}
-        className="rounded-lg bg-slate-100 text-slate-900 text-sm font-medium px-4 py-2 hover:bg-slate-300 transition disabled:opacity-50"
+        pending={isPending}
+        pendingText="확인 중..."
       >
-        {isPending ? "확인 중..." : "삭제 대상 미리보기"}
-      </button>
+        삭제 대상 미리보기
+      </Button>
 
       {preview && !previewStale && (
         <div className="rounded-xl border border-red-800 bg-red-500/10 p-4 space-y-2">
           <p className="text-sm font-semibold text-red-300">
             아래 기록이 영구적으로 삭제됩니다 (되돌릴 수 없음):
           </p>
-          <ul className="text-sm text-red-300 space-y-0.5">
+          <ul className="text-sm text-red-300 space-y-0.5 tabular-nums">
             <li>게임 기록: {preview.games}건</li>
             <li>정산/기부 기록: {preview.settlements}건</li>
             <li>과거 누적기록: {preview.adjustments}건</li>
           </ul>
           {preview.games + preview.settlements + preview.adjustments === 0 ? (
-            <p className="text-sm text-slate-400">삭제될 대상이 없습니다.</p>
+            <p className="text-sm text-content-muted">삭제될 대상이 없습니다.</p>
           ) : (
             <div className="pt-2">
               <label className="block text-xs text-red-300 mb-1">
@@ -111,7 +114,7 @@ export default function RollbackForm() {
                 value={confirmText}
                 onChange={(e) => setConfirmText(e.target.value)}
                 placeholder={CONFIRM_PHRASE}
-                className="bg-slate-900 rounded-lg border border-red-700 px-3 py-1.5 text-sm w-48"
+                className="bg-surface rounded-lg border border-red-700 px-3 py-1.5 text-sm w-48 text-content"
               />
             </div>
           )}
@@ -120,21 +123,26 @@ export default function RollbackForm() {
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 
+      {/* Deliberately not the standard `danger` token (a soft translucent
+          wash meant for routine deletes) — this is the app's only
+          irreversible mass-delete, so it keeps a solid, unmistakably alarming
+          red rather than being visually downgraded to match routine "삭제"
+          buttons elsewhere. */}
       <button
         type="button"
         onClick={handleExecute}
         disabled={!canExecute || isPending}
-        className="rounded-lg bg-red-600 text-white text-sm font-medium px-4 py-2 hover:bg-red-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+        className="min-h-11 rounded-lg bg-red-600 text-white text-sm font-medium px-4 transition active:scale-[0.97] hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
       >
         {isPending ? "삭제 중..." : "영구 삭제 실행"}
       </button>
 
       {result && (
-        <div className="rounded-xl bg-emerald-500/10 border border-emerald-800 text-emerald-300 text-sm px-4 py-3">
+        <div className="rounded-xl bg-emerald-500/10 border border-emerald-800 text-emerald-300 text-sm px-4 py-3 tabular-nums">
           삭제 완료: 게임 {result.games}건, 정산/기부 {result.settlements}건,
           과거 누적기록 {result.adjustments}건.
         </div>
       )}
-    </section>
+    </Card>
   );
 }

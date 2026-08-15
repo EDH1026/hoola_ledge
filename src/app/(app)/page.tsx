@@ -15,6 +15,10 @@ import { currentQuarterKey, formatQuarterKey, gameWallClock } from "@/lib/time";
 import { format } from "date-fns";
 import { GAME_TYPE_LABELS, GAME_TYPES } from "@/lib/types";
 import { GameTypeBadge, ResultBadge, StreakBadge, TierBadge } from "@/components/badges";
+import { Card } from "@/components/ui/Card";
+import { SectionTitle } from "@/components/ui/SectionTitle";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { buttonClassName } from "@/components/ui/Button";
 
 export const dynamic = "force-dynamic";
 
@@ -80,41 +84,38 @@ export default async function DashboardPage() {
   const formRows = stats.filter((s) => s.appearances > 0 && s.wins + s.losses > 0);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">대시보드</h1>
-          <p className="text-sm text-slate-400 mt-1">
+          <h1 className="text-2xl font-bold text-content">대시보드</h1>
+          <p className="text-sm text-content-muted mt-1">
             참가자 {db.participants.length}명 · 게임 {gamesActive.length}회 기록됨
           </p>
         </div>
-        <Link
-          href="/games/new"
-          className="rounded-lg bg-slate-100 text-slate-900 text-sm font-medium px-4 py-2 hover:bg-slate-300 transition"
-        >
+        <Link href="/games/new" className={buttonClassName("primary")}>
           + 새 게임 기록
         </Link>
       </div>
 
-      <div className="rounded-xl bg-slate-100 text-slate-900 px-4 py-3 text-sm space-y-2">
-        <span className="font-semibold">최근 경기일 요약</span>
+      <div className="rounded-xl bg-surface-raised border border-line px-4 py-3 text-sm space-y-2">
+        <span className="font-semibold text-content">최근 경기일 요약</span>
         {recentDays.length === 0 ? (
-          <p className="text-slate-600">아직 기록된 게임이 없습니다.</p>
+          <p className="text-content-muted">아직 기록된 게임이 없습니다.</p>
         ) : (
-          <ul className="space-y-1">
+          <ul className="space-y-1 tabular-nums">
             {recentDays.map((d) => (
               <li
                 key={d.date}
-                className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-slate-600"
+                className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-content-muted"
               >
-                <span className="text-slate-900 font-medium">{d.date}</span>
+                <span className="text-content font-medium">{d.date}</span>
                 <span>{d.gameCount}게임</span>
                 {d.topWinners.length > 0 && (
                   <>
-                    <span className="text-slate-400">·</span>
+                    <span className="text-content-faint">·</span>
                     <span>
                       최다 승자{" "}
-                      <span className="text-slate-900 font-medium">
+                      <span className="text-content font-medium">
                         {d.topWinners.map((w) => w.name).join(", ")}
                       </span>{" "}
                       (득실차 {d.margin > 0 ? "+" : ""}
@@ -128,32 +129,33 @@ export default async function DashboardPage() {
         )}
       </div>
 
-      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold">이번 분기 티어 (통합 · 종목별)</h2>
-          <Link href="/records" className="text-xs text-slate-400 hover:underline">
-            통산기록 전체 보기 →
-          </Link>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
+      <Card>
+        <SectionTitle
+          action={
+            <Link href="/records" className="text-xs text-content-muted hover:underline">
+              통산기록 전체 보기 →
+            </Link>
+          }
+        >
+          이번 분기 티어 (통합 · 종목별)
+        </SectionTitle>
+        <div className="grid gap-4 sm:grid-cols-2 mt-3">
           {tierBlocks.map((block) => (
             <div key={block.gameType}>
-              <p className="text-xs font-medium text-slate-500 mb-2">
+              <p className="text-xs font-medium text-content-muted mb-2">
                 {block.label}
                 {block.quarter ? ` · ${formatQuarterKey(block.quarter)}` : ""}
               </p>
               {block.top3.length === 0 ? (
-                <p className="text-sm text-slate-500">
-                  아직 배치를 완료한 참가자가 없습니다.
-                </p>
+                <EmptyState title="아직 배치를 완료한 참가자가 없습니다." />
               ) : (
-                <ul className="space-y-1.5">
+                <ul className="space-y-1.5 tabular-nums">
                   {block.top3.map((row, i) => (
                     <li key={row.id} className="flex items-center gap-2 text-sm">
-                      <span className="w-4 text-slate-500">{i + 1}</span>
-                      <span className="font-medium">{row.name}</span>
+                      <span className="w-4 text-content-faint">{i + 1}</span>
+                      <span className="font-medium text-content">{row.name}</span>
                       <TierBadge tier={row.tier} size="sm" />
-                      <span className="text-slate-500">{Math.round(row.tr)} TR</span>
+                      <span className="text-content-muted">{Math.round(row.tr)} TR</span>
                     </li>
                   ))}
                 </ul>
@@ -161,41 +163,40 @@ export default async function DashboardPage() {
             </div>
           ))}
         </div>
-      </section>
+      </Card>
 
       <div className="grid gap-6 md:grid-cols-2">
-        <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
-          <h2 className="font-semibold">순위 (누적 점수)</h2>
-          <p className="text-xs text-slate-500 mb-4">
-            게임 승/무/패 기준 — 과거 누적기록(조정)은 반영되지 않습니다.
-          </p>
+        <Card>
+          <SectionTitle description="게임 승/무/패 기준 — 과거 누적기록(조정)은 반영되지 않습니다.">
+            순위 (누적 점수)
+          </SectionTitle>
           {rankedStats.length === 0 ? (
-            <p className="text-sm text-slate-500">아직 기록된 게임이 없습니다.</p>
+            <EmptyState title="아직 기록된 게임이 없습니다." />
           ) : (
-            <ol className="space-y-2">
+            <ol className="space-y-2 mt-4 tabular-nums">
               {rankedStats.map((s, i) => (
                 <li
                   key={s.id}
                   className="flex items-center justify-between text-sm"
                 >
                   <span className="flex items-center gap-2">
-                    <span className="w-5 text-slate-500">{i + 1}</span>
+                    <span className="w-5 text-content-faint">{i + 1}</span>
                     <Link
                       href={`/stats?h2h=${s.id}`}
-                      className="font-medium hover:underline"
+                      className="font-medium text-content hover:underline"
                     >
                       {s.name}
                     </Link>
                   </span>
-                  <span className="text-slate-400">
+                  <span className="text-content-muted">
                     {s.wins}승 {s.appearances - s.wins - s.losses}무 {s.losses}패
                     <span
                       className={`ml-2 font-semibold ${
                         s.netPoints > 0
                           ? "text-emerald-400"
                           : s.netPoints < 0
-                          ? "text-red-500"
-                          : "text-slate-500"
+                          ? "text-lose"
+                          : "text-content-muted"
                       }`}
                     >
                       {s.netPoints > 0 ? "+" : ""}
@@ -208,59 +209,53 @@ export default async function DashboardPage() {
           )}
           <Link
             href="/stats"
-            className="inline-block mt-4 text-xs text-slate-400 hover:underline"
+            className="inline-block mt-4 text-xs text-content-muted hover:underline"
           >
             전체 통계 보기 →
           </Link>
-        </section>
+        </Card>
 
-        <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
-          <h2 className="font-semibold mb-4">
-            정리된 채권-채무 관계 ({transactions.length}건)
-          </h2>
+        <Card>
+          <SectionTitle>정리된 채권-채무 관계 ({transactions.length}건)</SectionTitle>
           {transactions.length === 0 ? (
-            <p className="text-sm text-slate-500">정산할 내역이 없습니다.</p>
+            <EmptyState title="정산할 내역이 없습니다." />
           ) : (
-            <ul className="space-y-2">
+            <ul className="space-y-2 mt-4 tabular-nums">
               {transactions.slice(0, 6).map((t, i) => (
                 <li key={i} className="flex items-center justify-between text-sm">
                   <span>
-                    <span className="font-medium">{nameOf(nameMap, t.fromId)}</span>
-                    <span className="text-slate-500 mx-1">→</span>
-                    <span className="font-medium">{nameOf(nameMap, t.toId)}</span>
+                    <span className="font-medium text-content">{nameOf(nameMap, t.fromId)}</span>
+                    <span className="text-content-faint mx-1">→</span>
+                    <span className="font-medium text-content">{nameOf(nameMap, t.toId)}</span>
                   </span>
-                  <span className="text-slate-300 font-semibold">{t.amount}점</span>
+                  <span className="text-content-sub font-semibold">{t.amount}점</span>
                 </li>
               ))}
             </ul>
           )}
           <Link
             href="/settlements"
-            className="inline-block mt-4 text-xs text-slate-400 hover:underline"
+            className="inline-block mt-4 text-xs text-content-muted hover:underline"
           >
             정산 화면으로 →
           </Link>
-        </section>
+        </Card>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
-        <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
-          <h2 className="font-semibold">핫 플레이어</h2>
-          <p className="text-xs text-slate-500 mb-4">
-            최근 14일간 3경기 이상 치른 참가자 중 통산 승률보다 최근 승률이
-            높은 순
-          </p>
+        <Card>
+          <SectionTitle description="최근 14일간 3경기 이상 치른 참가자 중 통산 승률보다 최근 승률이 높은 순">
+            핫 플레이어
+          </SectionTitle>
           {hot.length === 0 ? (
-            <p className="text-sm text-slate-500">
-              조건을 만족하는 참가자가 아직 없습니다.
-            </p>
+            <EmptyState title="조건을 만족하는 참가자가 아직 없습니다." />
           ) : (
-            <ul className="space-y-2">
+            <ul className="space-y-2 mt-4 tabular-nums">
               {hot.map((h, i) => (
                 <li key={h.id} className="flex items-center justify-between text-sm">
                   <span className="flex items-center gap-2">
-                    <span className="w-4 text-slate-500">{i + 1}</span>
-                    <span className="font-medium">{h.name}</span>
+                    <span className="w-4 text-content-faint">{i + 1}</span>
+                    <span className="font-medium text-content">{h.name}</span>
                   </span>
                   <span className="text-emerald-400 font-semibold">
                     {(h.careerWinRate * 100).toFixed(0)}% → {(h.recentWinRate * 100).toFixed(0)}%
@@ -269,42 +264,38 @@ export default async function DashboardPage() {
               ))}
             </ul>
           )}
-        </section>
+        </Card>
 
-        <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
-          <h2 className="font-semibold">콜드 플레이어</h2>
-          <p className="text-xs text-slate-500 mb-4">
-            최근 14일간 3경기 이상 치른 참가자 중 통산 승률보다 최근 승률이
-            낮은 순
-          </p>
+        <Card>
+          <SectionTitle description="최근 14일간 3경기 이상 치른 참가자 중 통산 승률보다 최근 승률이 낮은 순">
+            콜드 플레이어
+          </SectionTitle>
           {cold.length === 0 ? (
-            <p className="text-sm text-slate-500">
-              조건을 만족하는 참가자가 아직 없습니다.
-            </p>
+            <EmptyState title="조건을 만족하는 참가자가 아직 없습니다." />
           ) : (
-            <ul className="space-y-2">
+            <ul className="space-y-2 mt-4 tabular-nums">
               {cold.map((c, i) => (
                 <li key={c.id} className="flex items-center justify-between text-sm">
                   <span className="flex items-center gap-2">
-                    <span className="w-4 text-slate-500">{i + 1}</span>
-                    <span className="font-medium">{c.name}</span>
+                    <span className="w-4 text-content-faint">{i + 1}</span>
+                    <span className="font-medium text-content">{c.name}</span>
                   </span>
-                  <span className="text-red-500 font-semibold">
+                  <span className="text-lose font-semibold">
                     {(c.careerWinRate * 100).toFixed(0)}% → {(c.recentWinRate * 100).toFixed(0)}%
                   </span>
                 </li>
               ))}
             </ul>
           )}
-        </section>
+        </Card>
       </div>
 
-      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
-        <h2 className="font-semibold mb-4">최근 폼 & 스트릭</h2>
+      <Card>
+        <SectionTitle>최근 폼 & 스트릭</SectionTitle>
         {formRows.length === 0 ? (
-          <p className="text-sm text-slate-500">아직 기록된 게임이 없습니다.</p>
+          <EmptyState title="아직 기록된 게임이 없습니다." />
         ) : (
-          <ul className="divide-y divide-slate-800">
+          <ul className="divide-y divide-line mt-2">
             {formRows.map((s) => {
               const form = formById.get(s.id);
               const streak = streakById.get(s.id);
@@ -313,7 +304,7 @@ export default async function DashboardPage() {
                   key={s.id}
                   className="py-2.5 flex flex-wrap items-center justify-between gap-2 text-sm"
                 >
-                  <span className="font-medium">{s.name}</span>
+                  <span className="font-medium text-content">{s.name}</span>
                   <span className="flex items-center gap-3">
                     <span className="flex items-center gap-1">
                       {form?.results.length ? (
@@ -321,7 +312,7 @@ export default async function DashboardPage() {
                           <ResultBadge key={i} result={r} />
                         ))
                       ) : (
-                        <span className="text-xs text-slate-500">-</span>
+                        <span className="text-xs text-content-muted">-</span>
                       )}
                     </span>
                     <StreakBadge type={streak?.type ?? null} length={streak?.length ?? 0} />
@@ -331,17 +322,17 @@ export default async function DashboardPage() {
             })}
           </ul>
         )}
-        <p className="text-xs text-slate-500 mt-3">
+        <p className="text-xs text-content-muted mt-3">
           최근 폼은 왼쪽이 과거, 오른쪽이 가장 최근 경기입니다 (최근 5경기).
         </p>
-      </section>
+      </Card>
 
-      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
-        <h2 className="font-semibold mb-4">최근 게임</h2>
+      <Card>
+        <SectionTitle>최근 게임</SectionTitle>
         {recentGames.length === 0 ? (
-          <p className="text-sm text-slate-500">아직 기록된 게임이 없습니다.</p>
+          <EmptyState title="아직 기록된 게임이 없습니다." />
         ) : (
-          <ul className="divide-y divide-slate-800">
+          <ul className="divide-y divide-line mt-2">
             {recentGames.map((g) => {
               // v2.18 (PRD §22) — show the real calendar date this game was
               // played on, not the business-day group key it's filed under.
@@ -352,22 +343,22 @@ export default async function DashboardPage() {
                   className="py-2.5 flex flex-wrap items-center justify-between gap-2 text-sm"
                 >
                   <span className="flex items-center gap-2">
-                    <span className="text-slate-400">
+                    <span className="text-content-muted tabular-nums">
                       {format(new Date(wallClock.date), "yyyy-MM-dd")}
                     </span>
                     <GameTypeBadge gameType={g.gameType} />
                   </span>
-                  <span>
+                  <span className="tabular-nums">
                     <span className="text-emerald-400 font-medium">
                       {nameOf(nameMap, g.winnerId)}
                     </span>
-                    <span className="text-slate-500 mx-1">Win · Lose</span>
-                    <span className="text-red-500 font-medium">
+                    <span className="text-content-muted mx-1">Win · Lose</span>
+                    <span className="text-lose font-medium">
                       {nameOf(nameMap, g.loserId)}
                     </span>
-                    <span className="text-slate-500 ml-1">· {g.points ?? 1}점</span>
+                    <span className="text-content-muted ml-1">· {g.points ?? 1}점</span>
                   </span>
-                  <span className="text-slate-500">참가 {g.attendeeIds.length}명</span>
+                  <span className="text-content-muted tabular-nums">참가 {g.attendeeIds.length}명</span>
                 </li>
               );
             })}
@@ -375,11 +366,11 @@ export default async function DashboardPage() {
         )}
         <Link
           href="/games"
-          className="inline-block mt-4 text-xs text-slate-400 hover:underline"
+          className="inline-block mt-4 text-xs text-content-muted hover:underline"
         >
           전체 게임 목록 →
         </Link>
-      </section>
+      </Card>
     </div>
   );
 }

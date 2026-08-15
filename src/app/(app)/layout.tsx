@@ -25,14 +25,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="border-b border-slate-800 bg-slate-900 sticky top-0 z-10">
+      <header className="border-b border-line bg-surface sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 flex items-center justify-between h-14 gap-3">
           <nav className="flex items-center gap-1 overflow-x-auto">
             {NAV_ITEMS.filter((item) => !item.admin || admin).map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
-                className="px-3 py-1.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-700 hover:text-slate-100 whitespace-nowrap transition"
+                className="px-3 py-1.5 rounded-lg text-sm font-medium text-content-sub hover:bg-slate-700 hover:text-content whitespace-nowrap transition"
               >
                 {item.label}
               </Link>
@@ -46,7 +46,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                 </span>
                 <button
                   type="submit"
-                  className="text-xs text-slate-500 hover:text-slate-200 whitespace-nowrap"
+                  className="text-xs text-content-sub hover:text-content whitespace-nowrap rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
                 >
                   관리자 종료
                 </button>
@@ -54,7 +54,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             ) : (
               <Link
                 href="/admin-login"
-                className="text-xs text-slate-500 hover:text-slate-200 whitespace-nowrap"
+                className="text-xs text-content-sub hover:text-content whitespace-nowrap"
               >
                 관리자 모드
               </Link>
@@ -62,7 +62,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <form action={logoutAction}>
               <button
                 type="submit"
-                className="text-xs text-slate-500 hover:text-slate-200 whitespace-nowrap"
+                className="text-xs text-content-sub hover:text-content whitespace-nowrap rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
               >
                 로그아웃
               </button>

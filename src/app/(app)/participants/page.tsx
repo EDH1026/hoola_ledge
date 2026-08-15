@@ -1,5 +1,9 @@
 import { listParticipants } from "@/lib/storage";
 import { addParticipant, renameParticipant, setParticipantActive } from "@/lib/actions";
+import { Card } from "@/components/ui/Card";
+import { SectionTitle } from "@/components/ui/SectionTitle";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { SubmitButton } from "@/components/ui/SubmitButton";
 
 export const dynamic = "force-dynamic";
 
@@ -10,66 +14,63 @@ export default async function ParticipantsPage() {
   const inactive = participants.filter((p) => !p.active);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
         <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 text-amber-300 text-xs font-medium px-2.5 py-1 mb-2">
           관리자 모드
         </div>
-        <h1 className="text-2xl font-bold">참가자 풀</h1>
-        <p className="text-sm text-slate-400 mt-1">
+        <h1 className="text-2xl font-bold text-content">참가자 풀</h1>
+        <p className="text-sm text-content-muted mt-1">
           게임에 참여할 수 있는 전체 인원을 관리합니다. 비활성화된 참가자는 새 게임
           선택 목록에 나타나지 않지만 과거 기록은 그대로 유지됩니다.
         </p>
       </div>
 
-      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
-        <h2 className="font-semibold mb-3">참가자 추가</h2>
+      <Card>
+        <SectionTitle>참가자 추가</SectionTitle>
         <form
           action={async (formData: FormData) => {
             "use server";
             await addParticipant(String(formData.get("name") ?? ""));
           }}
-          className="flex gap-2"
+          className="flex gap-2 mt-3"
         >
           <input
             type="text"
             name="name"
             placeholder="이름"
             required
-            className="bg-slate-900 flex-1 rounded-lg border border-slate-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-100"
+            className="bg-surface flex-1 rounded-lg border border-slate-700 px-3 py-2 text-sm text-content focus:outline-none focus:ring-2 focus:ring-accent-soft"
           />
-          <button
-            type="submit"
-            className="rounded-lg bg-slate-100 text-slate-900 text-sm font-medium px-4 py-2 hover:bg-slate-300 transition"
-          >
-            추가
-          </button>
+          <SubmitButton pendingText="추가 중...">추가</SubmitButton>
         </form>
-      </section>
+      </Card>
 
-      <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
-        <h2 className="font-semibold mb-3">활성 참가자 ({active.length}명)</h2>
-        <ul className="divide-y divide-slate-800">
+      <Card>
+        <SectionTitle>활성 참가자 ({active.length}명)</SectionTitle>
+        <ul className="divide-y divide-line mt-3">
           {active.map((p) => (
             <ParticipantRow key={p.id} id={p.id} name={p.name} active={p.active} />
           ))}
-          {active.length === 0 && (
-            <p className="text-sm text-slate-500 py-2">참가자가 없습니다.</p>
-          )}
         </ul>
-      </section>
+        {active.length === 0 && (
+          <div className="pt-3">
+            <EmptyState title="참가자가 없습니다." />
+          </div>
+        )}
+      </Card>
 
       {inactive.length > 0 && (
-        <section className="bg-slate-900 rounded-2xl border border-slate-800 p-5">
-          <h2 className="font-semibold mb-3 text-slate-400">
-            비활성 참가자 ({inactive.length}명)
-          </h2>
-          <ul className="divide-y divide-slate-800">
+        <Card>
+          <SectionTitle>
+            <span className="text-content-muted">비활성 참가자 ({inactive.length}명)</span>
+          </SectionTitle>
+          <ul className="divide-y divide-line mt-3">
             {inactive.map((p) => (
               <ParticipantRow key={p.id} id={p.id} name={p.name} active={p.active} />
             ))}
           </ul>
-        </section>
+        </Card>
       )}
     </div>
   );
@@ -100,28 +101,20 @@ function ParticipantRow({
           type="text"
           name="name"
           defaultValue={name}
-          className={`bg-slate-900 flex-1 rounded-lg border px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-100 ${
-            active ? "border-slate-800" : "border-slate-800 text-slate-500"
-          }`}
+          className="bg-surface flex-1 rounded-lg border border-slate-700 px-2.5 py-1.5 text-sm text-content-sub focus:outline-none focus:ring-2 focus:ring-accent-soft"
         />
-        <button
-          type="submit"
-          className="text-xs text-slate-500 hover:text-slate-100 px-2"
-        >
+        <SubmitButton variant="ghost" size="sm" pendingText="저장 중...">
           저장
-        </button>
+        </SubmitButton>
       </form>
       <form action={toggleAction}>
-        <button
-          type="submit"
-          className={`text-xs px-3 py-1.5 rounded-lg font-medium transition ${
-            active
-              ? "bg-slate-800 text-slate-300 hover:bg-red-500/20 hover:text-red-400"
-              : "bg-slate-100 text-slate-900 hover:bg-slate-300"
-          }`}
+        <SubmitButton
+          variant={active ? "danger" : "neutral"}
+          size="sm"
+          pendingText={active ? "비활성화 중..." : "활성화 중..."}
         >
           {active ? "비활성화" : "다시 활성화"}
-        </button>
+        </SubmitButton>
       </form>
     </li>
   );

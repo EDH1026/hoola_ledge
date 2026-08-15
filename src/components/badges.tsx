@@ -17,7 +17,7 @@ export function GameTypeBadge({ gameType }: { gameType?: GameType }) {
   const label = gameType ? GAME_TYPE_LABELS[gameType] : "종목 미지정";
   const style = gameType
     ? GAME_TYPE_STYLES[gameType]
-    : "bg-slate-800 text-slate-500 border-slate-800";
+    : "bg-surface-raised text-content-muted border-line";
   return (
     <span
       className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${style}`}
@@ -53,7 +53,7 @@ export function SettlementTypeBadge({ type }: { type?: SettlementType }) {
 /** Marks a soft-deleted (active: false) record in admin-only views — e.g. the games list, where admins (unlike everyone else) can see inactive rows. */
 export function InactiveBadge() {
   return (
-    <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-800 text-slate-400 px-2 py-0.5 text-xs font-medium whitespace-nowrap">
+    <span className="inline-flex items-center rounded-full border border-line bg-surface-raised text-content-muted px-2 py-0.5 text-xs font-medium whitespace-nowrap">
       비활성
     </span>
   );
@@ -80,7 +80,7 @@ export function GameNightBadge({ businessDate }: { businessDate: string }) {
 
 export function LedgerAdjustmentBadge() {
   return (
-    <span className="inline-flex items-center rounded-full border border-slate-700 bg-slate-800 text-slate-300 px-2 py-0.5 text-xs font-medium whitespace-nowrap">
+    <span className="inline-flex items-center rounded-full border border-line bg-surface-raised text-content-sub px-2 py-0.5 text-xs font-medium whitespace-nowrap">
       과거 기록
     </span>
   );
@@ -109,7 +109,7 @@ export function StreakBadge({
   length: number;
 }) {
   if (!type || length === 0) {
-    return <span className="text-xs text-slate-500">-</span>;
+    return <span className="text-xs text-content-muted">-</span>;
   }
   const style =
     type === "W"
@@ -130,7 +130,7 @@ export function StreakBadge({
 // (purple) — fuchsia reads as a step up from sky without competing with
 // challenger's purple.
 const TIER_STYLES: Record<Tier, string> = {
-  unranked: "bg-slate-800 text-slate-500 border-slate-800",
+  unranked: "bg-surface-raised text-content-muted border-line",
   bronze: "bg-orange-500/10 text-orange-300 border-orange-800",
   silver: "bg-slate-800 text-slate-300 border-slate-700",
   gold: "bg-amber-500/10 text-amber-300 border-amber-700",

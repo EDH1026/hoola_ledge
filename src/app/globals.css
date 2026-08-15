@@ -10,13 +10,38 @@
   --color-foreground: var(--foreground);
 }
 
+/* v2.19 배치 A — 시맨틱 디자인 토큰. 화면 곳곳의 raw slate-* 사용을
+   의미 단위로 대체하기 위한 어휘. --color-line은 oklch(from ...) 상대색
+   문법 대신 rgba() 알파를 쓴다 (호환성 확인됨). 이 파일의 커스텀 토큰은
+   실제로 클래스가 쓰이는 컴포넌트가 생기기 전까지는 Tailwind의 콘텐츠
+   스캔에 의해 빌드 산출물에서 제외된다 — 정상 동작이며 버그 아님. */
+@theme {
+  --color-surface: #0f172a;
+  --color-surface-raised: #1e293b;
+  --color-line: rgba(51, 65, 85, 0.6);
+  --color-content: #f1f5f9;
+  --color-content-sub: #cbd5e1;
+  --color-content-muted: #94a3b8;
+  --color-content-faint: #64748b;
+  --color-win: #34d399;
+  --color-lose: #f87171;
+  --color-accent: #6366f1;
+  --color-accent-soft: #818cf8;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
   font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
-    Arial, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    var(--font-pretendard), -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, "Apple SD Gothic Neo", "Malgun Gothic",
+    sans-serif;
 }
+
+/* Vertically-aligned numeric columns (leaderboards, H2H tables, point
+   grids, settlement amounts) — see PRD §24.8. Tailwind's `tabular-nums`
+   utility is applied per-element at each call site instead of scoping this
+   globally to `table`, since not every table cell holds a number. */
 
 /* Chrome/Safari paint autofilled inputs with their own light background
    (ignoring any bg-* class) until the field is edited — a stray light flash
