@@ -6,7 +6,7 @@ import {
   format,
 } from "date-fns";
 import { GameResult, GameType, Settlement, LedgerAdjustment } from "./types";
-import { activeGames } from "./games";
+import { activeGames, withinDayKey, computeDailySequenceNumbers } from "./games";
 import { todayInSeoul, quarterKeyOf, addDaysToIsoDate } from "./time";
 import { computePeakBalances } from "./settle";
 
@@ -1179,6 +1179,119 @@ export function filterByDatePreset<T extends { date: string }>(
   }
 
   return items;
+}
+
+// ---------- v2.20: live game-night board (PRD §26) ----------
+
+export interface GameNightRow {
+  id: string;
+  name: string;
+  appearances: number; // 오늘 참석 판수
+  wins: number;
+  losses: number;
+  netPoints: number;
+  streakType: "W" | "L" | null; // 오늘 밤 기준 (통산 스트릭 아님)
+  streakLength: number;
+}
+
+export interface GameNightBoard {
+  date: string; // 영업일 "yyyy-MM-dd"
+  totalGames: number;
+  countsByGameType: { gameType: GameType | undefined; count: number }[];
+  rows: GameNightRow[];
+  latestGame: GameResult | null;
+  latestSequence: number | null; // 그 게임의 N차전 번호
+}
+
+/**
+ * v2.20 (PRD §26): 특정 영업일 하루치 게임의 실시간 현황. 새 지표가 아니라
+ * 기존 computeParticipantStats/computeCurrentStreaks를 재사용하지만, 얇은
+ * 래퍼로 두지 않고 별도 함수로 둔 이유는 "오늘 참석했지만 승패가 아직
+ * 없는 사람"까지 rows에 포함시켜야 하기 때문이다 —
+ * computeParticipantPointTotals는 승/패가 있는 사람만 맵에 키가 생겨서
+ * 못 쓰고, computeParticipantStats는 "참가자 목록에 있는 사람"만
+ * 0으로 초기화해주므로, 그 목록 자체를 오늘 참석자로 미리 좁혀서
+ * 넘기면(전체 참가자 풀이 아니라) 정확히 원하는 결과가 나온다.
+ *
+ * 게임이 하나도 없는 영업일은 "게임 밤이 아님"을 뜻하므로 null을
+ * 반환한다 — 호출부(대시보드)가 이 null로 보드 표시 여부를 판정한다.
+ */
+export function computeGameNightBoard(
+  participants: ParticipantLike[],
+  games: GameResult[],
+  businessDate: string
+): GameNightBoard | null {
+  const tonightGames = activeGames(games).filter((g) => g.date === businessDate);
+  if (tonightGames.length === 0) return null;
+
+  // 오늘 참석자만 — attendeeIds의 합집합. 전체 참가자 풀을 나열하면 오늘
+  // 안 온 사람이 0승0패로 섞여 보드가 의미를 잃는다.
+  const attendeeIds = new Set<string>();
+  for (const g of tonightGames) {
+    for (const id of g.attendeeIds) attendeeIds.add(id);
+  }
+  const byId = new Map(participants.map((p) => [p.id, p]));
+  const attendees: ParticipantLike[] = Array.from(attendeeIds).map(
+    (id) => byId.get(id) ?? { id, name: "(삭제된 참가자)", active: false }
+  );
+
+  const stats = computeParticipantStats(attendees, tonightGames);
+  // 오늘 밤 기준 스트릭 — 통산이 아니라 오늘 게임만 넘겨서 계산한다.
+  const streaks = new Map(
+    computeCurrentStreaks(attendees, tonightGames).map((s) => [s.id, s])
+  );
+
+  const rows: GameNightRow[] = stats.map((s) => {
+    const streak = streaks.get(s.id);
+    return {
+      id: s.id,
+      name: s.name,
+      appearances: s.appearances,
+      wins: s.wins,
+      losses: s.losses,
+      netPoints: s.netPoints,
+      streakType: streak?.type ?? null,
+      streakLength: streak?.length ?? 0,
+    };
+  });
+
+  rows.sort((a, b) => {
+    if (b.netPoints !== a.netPoints) return b.netPoints - a.netPoints;
+    if (b.wins !== a.wins) return b.wins - a.wins;
+    return a.name.localeCompare(b.name, "ko");
+  });
+
+  const countsMap = new Map<GameType | undefined, number>();
+  for (const g of tonightGames) {
+    countsMap.set(g.gameType, (countsMap.get(g.gameType) ?? 0) + 1);
+  }
+  const countsByGameType = Array.from(countsMap.entries()).map(([gameType, count]) => ({
+    gameType,
+    count,
+  }));
+
+  // withinDayKey로 정렬 — 자정을 넘긴 01:30판이 22:00판보다 뒤에 오도록
+  // (§18.1). 문자열 그대로("01:30" < "22:00") 비교하면 순서가 뒤집힌다.
+  const sortedTonight = [...tonightGames].sort((a, b) =>
+    withinDayKey(a).localeCompare(withinDayKey(b))
+  );
+  const latestGame = sortedTonight.length
+    ? sortedTonight[sortedTonight.length - 1]
+    : null;
+  // N차전 번호는 전체 게임 목록을 넘겨야 정확하다(§games.ts 참고) —
+  // 오늘 게임만 넘겨도 값 자체는 같지만, 다른 화면(예: /games)과 항상
+  // 같은 맵을 쓰는 습관을 유지한다.
+  const sequenceNumbers = computeDailySequenceNumbers(games);
+  const latestSequence = latestGame ? sequenceNumbers.get(latestGame.id) ?? null : null;
+
+  return {
+    date: businessDate,
+    totalGames: tonightGames.length,
+    countsByGameType,
+    rows,
+    latestGame,
+    latestSequence,
+  };
 }
 
 /** @deprecated use filterByDatePreset — kept as a thin alias so existing GameResult[] call sites don't need to change. */

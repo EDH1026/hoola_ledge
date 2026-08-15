@@ -7,13 +7,16 @@ import {
   computeCurrentStreaks,
   computeRecentGameDaysSummary,
   computeQuarterlyTiers,
+  computeGameNightBoard,
   GameTypeFilter,
 } from "@/lib/stats";
 import { simplifiedSettlements } from "@/lib/settle";
 import { activeGames, withinDayKey, computeDailySequenceNumbers } from "@/lib/games";
-import { currentQuarterKey, formatQuarterKey, gameWallClock } from "@/lib/time";
+import { currentQuarterKey, formatQuarterKey, gameWallClock, todayInSeoul } from "@/lib/time";
 import { GAME_TYPE_LABELS, GAME_TYPES } from "@/lib/types";
 import { GameTypeBadge, GameNightBadge, ResultBadge, StreakBadge, TierBadge } from "@/components/badges";
+import { GameNightBoardCard } from "@/components/GameNightBoard";
+import { GameNightRefresher } from "@/components/GameNightRefresher";
 import { Card } from "@/components/ui/Card";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -39,6 +42,11 @@ export default async function DashboardPage() {
   const db = await getFullDB();
   const nameMap = new Map(db.participants.map((p) => [p.id, p.name]));
   const gamesActive = activeGames(db.games);
+  // v2.20 (PRD §26) — todayInSeoul()은 v2.16부터 영업일(06:00 경계) 기준이라
+  // 05:50에 열면 아직 어젯밤, 06:05에 열면 새 날이다 — 의도된 동작이므로
+  // nowInSeoul()로 바꾸지 않는다. 게임이 없는 날은 null이라 보드 자체를
+  // 렌더하지 않는다(빈 카드도 두지 않음 — §26.2).
+  const gameNightBoard = computeGameNightBoard(db.participants, db.games, todayInSeoul());
   const stats = computeParticipantStats(db.participants, db.games);
   // 전원 표시 — 예전엔 상위 5명만 잘라 보여줬는데, 참가자가 많지 않은
   // 그룹이라 전원을 한눈에 보는 게 더 유용하다는 요청으로 상한을 없앴다.
@@ -107,6 +115,13 @@ export default async function DashboardPage() {
           + 새 게임 기록
         </Link>
       </div>
+
+      {gameNightBoard && (
+        <>
+          <GameNightBoardCard board={gameNightBoard} />
+          <GameNightRefresher />
+        </>
+      )}
 
       <div className="rounded-xl bg-surface-raised border border-line px-4 py-3 text-sm space-y-2">
         <span className="font-semibold text-content">최근 경기일 요약</span>
