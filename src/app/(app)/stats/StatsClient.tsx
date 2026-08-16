@@ -161,10 +161,31 @@ function GroupingFilterButtons<G extends string>({
 }
 
 const LABEL_MIN_GAP = 14; // px — minimum vertical spacing between two end labels
-const LABEL_MAX_NAME_LEN = 6;
+// v2.22 (PRD §30.1) — 4자였던 걸 조금 더 줄였다. 한글 이름은 대부분
+// 2~3자라 실제로 잘리는 경우는 드물고, 상한을 낮출수록 아래
+// cumulativeLabelMargin이 회수하는 여백이 커진다.
+const LABEL_MAX_NAME_LEN = 4;
+// 실측(390px 뷰포트, 2자 한글 이름 기준) 최소로 필요한 값이 32px에
+// 가까워, 28px까지만 낮춘다 — 더 내리면 라벨이 잘릴 위험이 생긴다.
+const LABEL_MARGIN_MIN = 28; // px
+const LABEL_MARGIN_MAX = 64; // px
 
 function truncateName(name: string): string {
   return name.length > LABEL_MAX_NAME_LEN ? `${name.slice(0, LABEL_MAX_NAME_LEN)}…` : name;
+}
+
+/**
+ * v2.22 (PRD §30.1) — the old fixed `margin.right: 76` assumed worst-case
+ * (long) names; most tracked names here are 2-3 Korean characters, so a
+ * fixed 76px left most of that margin empty. Sized instead from the actual
+ * longest *displayed* (post-truncateName) label, clamped to a sane range —
+ * `8 + maxChars * 10` roughly matches CumulativeEndLabels' own `labelX =
+ * lineEndX + 6` offset plus per-character text width at fontSize 10.
+ */
+function cumulativeLabelMargin(trackedNames: string[]): number {
+  if (trackedNames.length === 0) return LABEL_MARGIN_MIN;
+  const maxChars = Math.max(...trackedNames.map((name) => truncateName(name).length));
+  return Math.min(LABEL_MARGIN_MAX, Math.max(LABEL_MARGIN_MIN, 8 + maxChars * 10));
 }
 
 /**
@@ -246,7 +267,7 @@ function CumulativeEndLabels({
                 strokeWidth={1}
               />
             )}
-            <text x={labelX} y={e.y} fontSize={11} fill={e.color} dominantBaseline="middle">
+            <text x={labelX} y={e.y} fontSize={10} fill={e.color} dominantBaseline="middle">
               {truncateName(e.name)}
             </text>
           </g>
@@ -411,7 +432,14 @@ export default function StatsClient({
       const out: Record<string, string | number> = { label: row.label };
       if (row.date) out.__date = row.date;
       for (const [id, val] of Object.entries(row.values)) {
-        out[nameOf.get(id) ?? id] = val;
+        // v2.22 (PRD §30.2) — computeCumulativeNetPointsTrend가 이제
+        // attendeeIds도 보므로, 참가자 명단에서 하드 삭제된 id가 옛 게임의
+        // attendeeIds에 남아 있으면 여기 나타날 수 있다. 색도 없고
+        // (팔레트 조회 실패) 이름도 없어 의미가 없으므로 건너뛴다 — 이
+        // 함수는 명단을 모르므로 화면 쪽에서 거른다.
+        const name = nameOf.get(id);
+        if (!name) continue;
+        out[name] = val;
       }
       return out;
     });
@@ -797,12 +825,17 @@ export default function StatsClient({
             />
           </div>
         ) : (
-          <div style={{ width: "100%", height: "min(280px, 45vh)" }} className="mt-4">
+          // v2.22 (PRD §30.1) — -mx-4 sm:-mx-5 전체 블리드로 <Card>의
+          // p-4 sm:p-5 패딩 일부를 상쇄한다(공용 패딩 토큰 자체는 그대로).
+          <div
+            className="mt-4 -mx-4 sm:-mx-5"
+            style={{ width: "auto", height: "min(280px, 45vh)" }}
+          >
             <ResponsiveContainer>
-              <BarChart data={winLossData}>
+              <BarChart data={winLossData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} barCategoryGap="8%" barGap={2}>
                 <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_STROKE} />
                 <XAxis dataKey="name" tick={{ fontSize: 12, fill: CHART_TICK_FILL }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: CHART_TICK_FILL }} />
+                <YAxis width="auto" allowDecimals={false} tick={{ fontSize: 12, fill: CHART_TICK_FILL }} />
                 <Tooltip {...CHART_TOOLTIP_PROPS} />
                 <Legend {...CHART_LEGEND_PROPS} />
                 <Bar dataKey="승" fill="#059669" radius={[4, 4, 0, 0]} />
@@ -843,16 +876,30 @@ export default function StatsClient({
           // v2.21 (PRD §28.9.2) — 하단 범례를 없애고 선 오른쪽 끝에 이름을
           // 직접 붙인다(CumulativeEndLabels). margin.right로 라벨 자리를
           // 확보 — 없어진 범례가 돌려준 세로 공간 덕에 390px에서도 순증.
-          <div style={{ width: "100%", height: "min(360px, 55vh)" }} className="mt-4">
+          // v2.22 (PRD §30.1) — margin.right는 이제 실제 표시될 라벨 최대
+          // 길이에서 계산한다(고정 76px는 2~3자 한글 이름엔 과했다).
+          // -mx-4 sm:-mx-5 전체 블리드로 <Card> 패딩을 전부 상쇄 — 이
+          // 차트는 이름 라벨 여백 때문에 셋 중 오버헤드가 가장 커서,
+          // -mx-2/-mx-3 부분 블리드로는 390px에서 플롯 비율이 85% 목표에
+          // 못 미쳤다(실측 79%). 세 차트 모두 같은 블리드 폭으로 통일.
+          <div
+            className="mt-4 -mx-4 sm:-mx-5"
+            style={{ width: "auto", height: "min(360px, 55vh)" }}
+          >
             <ResponsiveContainer>
-              <LineChart data={cumulativeData} margin={{ top: 8, right: 76, bottom: 8 }}>
+              <LineChart
+                data={cumulativeData}
+                margin={{ top: 8, right: cumulativeLabelMargin(trackedNames), bottom: 8, left: 0 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_STROKE} />
                 <XAxis
                   dataKey="label"
+                  scale="point"
+                  padding={{ left: 0, right: 0 }}
                   tick={{ fontSize: 10, fill: CHART_TICK_FILL }}
                   interval="preserveStartEnd"
                 />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: CHART_TICK_FILL }} />
+                <YAxis width="auto" allowDecimals={false} tick={{ fontSize: 12, fill: CHART_TICK_FILL }} />
                 <Tooltip
                   {...CHART_TOOLTIP_PROPS}
                   labelFormatter={(label, payload) => {
@@ -909,12 +956,17 @@ export default function StatsClient({
             />
           </div>
         ) : (
-          <div style={{ width: "100%", height: "min(240px, 40vh)" }} className="mt-4">
+          // v2.22 (PRD §30.1) — -mx-4 sm:-mx-5 전체 블리드로 <Card> 패딩
+          // 일부를 상쇄.
+          <div
+            className="mt-4 -mx-4 sm:-mx-5"
+            style={{ width: "auto", height: "min(240px, 40vh)" }}
+          >
             <ResponsiveContainer>
-              <BarChart data={trendData}>
+              <BarChart data={trendData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} barCategoryGap="8%">
                 <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_STROKE} />
                 <XAxis dataKey="label" tick={{ fontSize: 12, fill: CHART_TICK_FILL }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: CHART_TICK_FILL }} />
+                <YAxis width="auto" allowDecimals={false} tick={{ fontSize: 12, fill: CHART_TICK_FILL }} />
                 <Tooltip {...CHART_TOOLTIP_PROPS} />
                 {/* v2.19 — 예전 #e2e8f0(slate-200)은 본문 텍스트 색과 거의
                     같아 화면에서 가장 밝은 요소가 이 막대였다. 참가자 개인

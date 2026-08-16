@@ -1118,6 +1118,15 @@ export interface CumulativeNetPointsRow {
  * midnight-crossing or admin-corrected-timestamp game out of order relative
  * to every other screen that already sorts by withinDayKey (e.g. /games,
  * the dashboard's "최근 경기일" card).
+ *
+ * v2.22 (PRD §30.2): a participant enters `running` (at 0) from their first
+ * *attendance*, not their first win/loss — every attendee of a game is
+ * seeded into the map (if not already present) before that game's win/loss
+ * delta is applied. Without this, someone who only ever draws (attends but
+ * never wins/loses) never gets a key at all, and anyone else's line doesn't
+ * start until their first decisive game — both read as "not tracked yet"
+ * when the truth is "tracked at 0." Before their first attendance there's
+ * still no key, so the line correctly doesn't exist for that stretch.
  */
 export function computeCumulativeNetPointsTrend(
   games: GameResult[],
@@ -1130,9 +1139,15 @@ export function computeCumulativeNetPointsTrend(
   );
 
   const running = new Map<string, number>();
+  const seedAttendees = (g: GameResult) => {
+    for (const id of g.attendeeIds) {
+      if (!running.has(id)) running.set(id, 0);
+    }
+  };
 
   if (grouping === "game") {
     return sorted.map((g, i) => {
+      seedAttendees(g);
       const points = g.points ?? 1;
       running.set(g.winnerId, (running.get(g.winnerId) ?? 0) + points);
       running.set(g.loserId, (running.get(g.loserId) ?? 0) - points);
@@ -1150,6 +1165,7 @@ export function computeCumulativeNetPointsTrend(
 
   for (const g of sorted) {
     const { key, label } = periodBucketKeyAndLabel(g.date, grouping);
+    seedAttendees(g);
     const points = g.points ?? 1;
     running.set(g.winnerId, (running.get(g.winnerId) ?? 0) + points);
     running.set(g.loserId, (running.get(g.loserId) ?? 0) - points);

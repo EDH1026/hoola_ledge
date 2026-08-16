@@ -768,4 +768,57 @@ function mkGame(opts: {
   );
 }
 
+// Case 16 (v2.22, PRD §30.2): computeCumulativeNetPointsTrend seeds every
+// attendee at 0 before applying that game's win/loss delta, so a
+// participant's line starts at their first ATTENDANCE, not their first
+// decisive game. Three games, one per day: g1 (A beats B, C attends as a
+// bystander), g2 (C beats A), g3 (A beats B, D attends as a bystander for
+// the first time). E attends all three but never wins or loses (draws
+// only, the whole way through). Checked under both "game" and "day"
+// grouping since each path seeds attendees independently.
+{
+  const g1 = mkGame({ id: "s1", date: "2026-08-10", time: "20:00", createdAt: "2026-08-10T11:00:00.000Z", attendeeIds: ["A", "B", "C", "E"], winnerId: "A", loserId: "B" });
+  const g2 = mkGame({ id: "s2", date: "2026-08-11", time: "20:00", createdAt: "2026-08-11T11:00:00.000Z", attendeeIds: ["A", "C", "E"], winnerId: "C", loserId: "A" });
+  const g3 = mkGame({ id: "s3", date: "2026-08-12", time: "20:00", createdAt: "2026-08-12T11:00:00.000Z", attendeeIds: ["A", "B", "D", "E"], winnerId: "A", loserId: "B" });
+  const games16 = [g1, g2, g3];
+
+  for (const grouping of ["game", "day"] as const) {
+    const rows = computeCumulativeNetPointsTrend(games16, grouping);
+    assert(rows.length === 3, `case16 (${grouping}): expected one row per game/day (3), got ${rows.length}`);
+
+    // 1. First attendance, not first decisive game: C is a bystander in g1
+    // (row 0) and must already show 0 there, not be absent.
+    assert(
+      rows[0]?.values.C === 0,
+      `case16 (${grouping}): C attended g1 as a bystander — row0.values.C must be 0 (present), got ${JSON.stringify(rows[0]?.values)}`
+    );
+
+    // 2. Draws-only participant: E attends every game, never wins/loses,
+    // and must be 0 in every row.
+    assert(
+      rows.every((r) => r.values.E === 0),
+      `case16 (${grouping}): E never wins or loses across any game — every row must show E at 0, got ${JSON.stringify(rows.map((r) => r.values))}`
+    );
+
+    // 3. Not present before attendance: D first appears in g3 (row 2) and
+    // must have no key at all in rows 0-1.
+    assert(
+      rows[0]?.values.D === undefined && rows[1]?.values.D === undefined,
+      `case16 (${grouping}): D hasn't attended yet in rows 0-1 — must have no key, got row0=${JSON.stringify(rows[0]?.values)} row1=${JSON.stringify(rows[1]?.values)}`
+    );
+    assert(
+      rows[2]?.values.D === 0,
+      `case16 (${grouping}): D attends (as a bystander) in g3 (row2) — must be 0 there, got ${JSON.stringify(rows[2]?.values)}`
+    );
+
+    // 4. Values unchanged: A/B/C's actual win/loss math must be identical
+    // to what it was before attendee-seeding existed (seeding only adds
+    // zero-valued keys, never changes a delta).
+    assert(
+      rows[2]?.values.A === 1 && rows[2]?.values.B === -2 && rows[2]?.values.C === 1,
+      `case16 (${grouping}): win/loss totals must be unaffected by attendee seeding (A=+1, B=-2, C=+1 after all 3 games), got ${JSON.stringify(rows[2]?.values)}`
+    );
+  }
+}
+
 console.log("Done.");
