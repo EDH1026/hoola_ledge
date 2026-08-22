@@ -104,11 +104,18 @@ function clamp(v: number, [min, max]: [number, number]): number {
   return Math.min(max, Math.max(min, v));
 }
 
-/** Tick positions at the center and every ±kσ (k=1..3) that still falls inside the domain — the axis "explains itself" instead of using arbitrary round numbers. */
+// PRD §36.2.4 — capped at ±2σ, not ±3σ: ±2σ already reads as ~the
+// theoretical min/max (~95% under a normal-ish null), so a 3rd σ marker
+// would just restate the domain edge without adding information. Shared by
+// both the tick labels and the reference lines below so the two always agree
+// on how far out they go.
+const SIGMA_MARKER_MULTIPLES = [1, 2];
+
+/** Tick positions at the center and every ±kσ (k in SIGMA_MARKER_MULTIPLES) that still falls inside the domain — the axis "explains itself" instead of using arbitrary round numbers. */
 function sigmaTicks(center: number, sigma: number, halfWidth: number): number[] {
   const ticks = new Set<number>([center]);
   if (sigma > 0) {
-    for (let k = 1; k <= 3; k++) {
+    for (const k of SIGMA_MARKER_MULTIPLES) {
       const lo = center - k * sigma;
       const hi = center + k * sigma;
       if (Math.abs(lo - center) <= halfWidth + 1e-9) ticks.add(lo);
@@ -122,7 +129,7 @@ function sigmaTicks(center: number, sigma: number, halfWidth: number): number[] 
 function sigmaLineValues(center: number, sigma: number, halfWidth: number): number[] {
   if (sigma <= 0) return [];
   const out: number[] = [];
-  for (const k of [1, 2]) {
+  for (const k of SIGMA_MARKER_MULTIPLES) {
     const lo = center - k * sigma;
     const hi = center + k * sigma;
     if (Math.abs(lo - center) <= halfWidth) out.push(lo);
