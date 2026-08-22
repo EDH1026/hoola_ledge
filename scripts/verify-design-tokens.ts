@@ -275,7 +275,52 @@ for (const tier of HEAT_TIER_ORDER) {
 }
 if (heatmapFail) hardFail = true;
 
+// ---- 11. v2.23 탄소배출권 리브랜딩 회귀 방지 (PRD §32.10) ----
+// 화면 표기가 다시 채권-채무/정산/금액 같은 옛 용어로 돌아가지 않도록 막는
+// 규제 검사. 주석은 제외한다 — settle.ts/stats.ts의 doc 주석은 의도적으로
+// debt/creditor 용어를 유지하기로 했다(§32.3). 정규식 기반이라 완벽하지
+// 않아도 되고, 회귀만 잡으면 충분하다(PRD 지시사항).
+function stripComments(content: string): string {
+  // 블록 주석 먼저 제거 — 그 안의 "//"가 아래 줄 주석 정규식을 오작동시키지
+  // 않도록.
+  const noBlock = content.replace(/\/\*[\s\S]*?\*\//g, "");
+  // 줄 주석 제거. "://" (예: https://)는 주석 시작이 아니므로 그 앞이 ":"인
+  // "//"는 건너뛴다.
+  return noBlock.replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
+const REBRAND_FORBIDDEN_WORDS = [
+  "채권",
+  "채무",
+  "정산",
+  "금액",
+  "잔액",
+  "판돈",
+  "불나방",
+  "조공러",
+  "상품으로 교환",
+];
+const rebrandFiles = listSourceFiles(SRC_DIR).filter((f) => /\.(ts|tsx)$/.test(f));
+const rebrandHits: Hit[] = [];
+for (const file of rebrandFiles) {
+  const raw = readFileSync(file, "utf8");
+  const stripped = stripComments(raw);
+  for (const word of REBRAND_FORBIDDEN_WORDS) {
+    let idx = stripped.indexOf(word);
+    while (idx !== -1) {
+      rebrandHits.push({
+        file: path.relative(process.cwd(), file),
+        line: lineNumberAt(stripped, idx),
+        text: word,
+      });
+      idx = stripped.indexOf(word, idx + word.length);
+    }
+  }
+}
+report("11. v2.23 탄소배출권 리브랜딩 금지어 (주석 제외, 반드시 0건)", rebrandHits);
+if (rebrandHits.length > 0) hardFail = true;
+
 console.log(
-  `\n${hardFail ? "FAIL" : "PASS"}: checks 1-3, 9-10 ${hardFail ? "found violations" : "clean"}. Checks 4-8 are informational.`
+  `\n${hardFail ? "FAIL" : "PASS"}: checks 1-3, 9-11 ${hardFail ? "found violations" : "clean"}. Checks 4-8 are informational.`
 );
 if (hardFail) process.exit(1);

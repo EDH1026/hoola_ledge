@@ -67,10 +67,10 @@ export default function SettlementsClient({
       <UndoStack entries={undo.entries} onRemove={undo.remove} />
 
       <Card>
-        <SectionTitle>정리된 채권-채무 관계 ({transactions.length}건)</SectionTitle>
+        <SectionTitle>정리된 이전 계획 ({transactions.length}건)</SectionTitle>
         {transactions.length === 0 ? (
           <div className="mt-4">
-            <EmptyState title="정산할 내역이 없습니다. 모두 정산 완료 상태입니다." />
+            <EmptyState title="넘길 배출권이 없습니다. 모두 이전 완료 상태입니다." />
           </div>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 mt-4">
@@ -91,30 +91,30 @@ export default function SettlementsClient({
 
       <Card>
         {/* v2.19 (배치 C, PRD §24.13) — 이 폼도 결국 type: "payment"로
-            저장되어 이력에는 "실제 정산"으로 뜬다. 예전엔 이 섹션 제목이
+            저장되어 이력에는 같은 라벨로 뜬다. 예전엔 이 섹션 제목이
             "변제"였는데, 방금 이 폼으로 기록한 사람이 아래 이력에서
-            "실제 정산"이라는 다른 이름표를 보게 되는 어긋남이 있었다.
-            제목을 이력의 표기와 맞추고, "변제"는 그 안의 자유 입력
-            모드를 설명하는 말로만 남긴다. */}
-        <SectionTitle description="위 카드에 제안된 조합과 다르게 실제로 갚았을 때(예: 다른 사람이 대신 내줬을 때) 자유롭게 기록하는 실제 정산입니다(변제). 계산 방식은 완전히 같습니다 — 굳이 누구 대신인지를 남기지 않아도, 다음에 이 화면을 열면 정리된 채권-채무 관계가 알아서 새로 계산되어 반영됩니다.">
-          실제 정산 (직접 입력)
+            다른 이름표를 보게 되는 어긋남이 있었다. 제목을 이력의
+            표기와 맞춘다. v2.23 — 라벨이 "배출권 이전"으로 바뀌었다
+            (PRD §32.2). */}
+        <SectionTitle description="위 카드에 제안된 조합과 다르게 실제로 넘겼을 때(예: 다른 사람이 대신 넘겨줬을 때) 자유롭게 기록하는 배출권 이전입니다. 계산 방식은 완전히 같습니다 — 굳이 누구 대신인지를 남기지 않아도, 다음에 이 화면을 열면 정리된 이전 계획이 알아서 새로 계산되어 반영됩니다.">
+          배출권 이전 (직접 입력)
         </SectionTitle>
         <div className="mt-4">
           <FreeformSettlementForm
             participants={participants}
             onRecorded={handleRecorded}
             type="payment"
-            fromLabel="갚은 사람"
+            fromLabel="넘긴 사람"
             toLabel="받은 사람"
-            recordingLabel="실제 정산"
-            notePlaceholder="예: 창민이 대신 현금으로 지불"
-            mismatchError="갚은 사람과 받은 사람이 같을 수 없습니다."
+            recordingLabel="배출권 이전"
+            notePlaceholder="예: 창민이 대신 넘겨줌"
+            mismatchError="넘긴 사람과 받은 사람이 같을 수 없습니다."
           />
         </div>
       </Card>
 
       <Card>
-        <SectionTitle description="계산된 채권-채무 관계와 무관하게, 누구든 원하는 상대에게 원하는 금액을 자유롭게 기부로 기록할 수 있습니다. 기부하는 사람의 잔액은 그만큼 줄고, 받는 사람의 잔액은 그만큼 늡니다.">
+        <SectionTitle description="계산된 배출권 이전 관계와 무관하게, 누구든 원하는 상대에게 원하는 수량을 자유롭게 기부로 기록할 수 있습니다. 기부하는 사람의 보유량은 그만큼 줄고, 받는 사람의 보유량은 그만큼 늡니다.">
           기부 기록
         </SectionTitle>
         <div className="mt-4">
@@ -193,7 +193,7 @@ function TransactionCard({
         });
         onRecorded({
           id,
-          summary: `${fromName} → ${toName} ${amount}점 (실제 정산)`,
+          summary: `${fromName} → ${toName} ${amount}점 (배출권 이전)`,
           createdAt,
         });
         setStep("idle");
@@ -236,7 +236,7 @@ function TransactionCard({
               step={1}
               value={amountText}
               onChange={(e) => setAmountText(e.target.value)}
-              placeholder="금액"
+              placeholder="수량"
               className="w-20 rounded-lg border border-slate-700 px-2 py-1 text-sm bg-surface text-content tabular-nums"
             />
             <Button
@@ -245,7 +245,7 @@ function TransactionCard({
               onClick={() => setAmountText(String(fullAmount))}
               className="whitespace-nowrap"
             >
-              전액 ({fullAmount}점)
+              전량 ({fullAmount}점)
             </Button>
             <Button variant="primary" size="sm" onClick={goToConfirm} className="ml-auto">
               다음
@@ -258,14 +258,14 @@ function TransactionCard({
           <p className="text-sm text-content tabular-nums">
             <span className="font-semibold">{fromName}</span>가{" "}
             <span className="font-semibold">{toName}</span>에게{" "}
-            <span className="font-semibold">{amount}점</span>을 실제 정산으로
+            <span className="font-semibold">{amount}점</span>을 배출권 이전으로
             기록합니다.
           </p>
           {isLarge && (
             <WarningBanner>
               {isFull
-                ? "이 거래의 전액을 정산합니다."
-                : `${LARGE_AMOUNT_THRESHOLD}점 이상의 큰 금액입니다.`}{" "}
+                ? "이 이전의 전량을 처리합니다."
+                : `${LARGE_AMOUNT_THRESHOLD}점 이상의 큰 수량입니다.`}{" "}
               한 번 더 확인해 주세요.
             </WarningBanner>
           )}
@@ -333,7 +333,7 @@ function FreeformSettlementForm({
       return;
     }
     if (!amountValid) {
-      setError("1 이상의 정수 금액을 입력해 주세요.");
+      setError("1 이상의 정수 수량을 입력해 주세요.");
       return;
     }
     setStep("confirm");
@@ -402,7 +402,7 @@ function FreeformSettlementForm({
           </select>
         </div>
         <div>
-          <label className="block text-xs text-content-muted mb-1">금액</label>
+          <label className="block text-xs text-content-muted mb-1">수량</label>
           <input
             type="number"
             min={1}
@@ -410,7 +410,7 @@ function FreeformSettlementForm({
             value={amountText}
             onChange={(e) => setAmountText(e.target.value)}
             disabled={confirming}
-            placeholder="금액"
+            placeholder="수량"
             className="bg-surface w-20 rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-content tabular-nums disabled:opacity-70"
           />
         </div>
@@ -445,7 +445,7 @@ function FreeformSettlementForm({
         <>
           {isLarge && (
             <WarningBanner>
-              {LARGE_AMOUNT_THRESHOLD}점 이상의 큰 금액입니다. 한 번 더 확인해
+              {LARGE_AMOUNT_THRESHOLD}점 이상의 큰 수량입니다. 한 번 더 확인해
               주세요.
             </WarningBanner>
           )}

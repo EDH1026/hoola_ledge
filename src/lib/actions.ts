@@ -304,7 +304,7 @@ export async function recordSettlement(input: {
   type?: WritableSettlementType;
   note?: string;
 }): Promise<{ id: string; createdAt: string }> {
-  if (input.amount <= 0) throw new Error("금액은 0보다 커야 합니다.");
+  if (input.amount <= 0) throw new Error("수량은 0보다 커야 합니다.");
   if (input.fromId === input.toId) {
     throw new Error("같은 사람 사이에는 기록할 수 없습니다.");
   }
@@ -336,7 +336,7 @@ export async function recordSettlement(input: {
 export async function deleteSettlement(id: string) {
   if (!(await isAdminSession())) {
     const existing = await getSettlementById(id);
-    if (!existing) throw new Error("정산 기록을 찾을 수 없습니다.");
+    if (!existing) throw new Error("이전 기록을 찾을 수 없습니다.");
     if (!isWithinEditWindow(existing.createdAt)) {
       throw new Error("기록 후 2시간이 지나 더 이상 취소할 수 없습니다.");
     }
@@ -358,7 +358,7 @@ export async function addLedgerAdjustment(input: {
   date?: string;
 }) {
   await requireAdmin();
-  if (input.amount <= 0) throw new Error("금액은 0보다 커야 합니다.");
+  if (input.amount <= 0) throw new Error("수량은 0보다 커야 합니다.");
   if (input.fromId === input.toId) {
     throw new Error("같은 사람 사이에는 기록할 수 없습니다.");
   }
@@ -387,7 +387,7 @@ export async function updateLedgerAdjustment(
   }
 ) {
   await requireAdmin();
-  if (input.amount <= 0) throw new Error("금액은 0보다 커야 합니다.");
+  if (input.amount <= 0) throw new Error("수량은 0보다 커야 합니다.");
   if (input.fromId === input.toId) {
     throw new Error("같은 사람 사이에는 기록할 수 없습니다.");
   }

@@ -12,7 +12,7 @@ export default async function LoginPage({
   return (
     <main className="min-h-screen flex items-center justify-center bg-slate-800 px-4">
       <div className="w-full max-w-sm bg-surface rounded-2xl shadow-sm border border-line p-8">
-        <h1 className="text-xl font-semibold text-content mb-1">게임 장부</h1>
+        <h1 className="text-xl font-semibold text-content mb-1">배출권 장부</h1>
         <p className="text-sm text-content-muted mb-6">
           공유 비밀번호를 입력해 주세요.
         </p>

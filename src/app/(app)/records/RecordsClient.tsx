@@ -13,6 +13,7 @@ import {
   ReferenceArea,
   LabelList,
 } from "recharts";
+import { ChevronDown } from "lucide-react";
 import { GAME_TYPE_LABELS, GAME_TYPES, GameResult, Settlement, LedgerAdjustment } from "@/lib/types";
 import { TierBadge } from "@/components/badges";
 import { Card } from "@/components/ui/Card";
@@ -254,9 +255,28 @@ export default function RecordsClient({
 
         <p className="text-xs text-content-muted mt-4">
           참석 인원수로 계산한 기대 승·패 대비 성과로 매깁니다 — 4인전 기대
-          승률 25%, 5인전 20%. 판돈(점수)과 표본 크기도 반영되며, 분기마다
+          승률 25%, 5인전 20%. 점수 규모와 표본 크기도 반영되며, 분기마다
           리셋되되 직전 분기 성적이 35% 이어집니다.
         </p>
+
+        <details className="mt-3 group">
+          <summary className="min-h-11 flex items-center gap-1.5 cursor-pointer select-none list-none text-xs text-content-sub hover:text-content [&::-webkit-details-marker]:hidden">
+            <ChevronDown
+              className="w-4 h-4 shrink-0 transition-transform group-open:rotate-180"
+              aria-hidden
+            />
+            <span className="group-open:hidden">티어는 어떻게 매겨지나요?</span>
+            <span className="hidden group-open:inline">티어는 어떻게 매겨지나요? (접기)</span>
+          </summary>
+          <ul className="mt-2 ml-5 space-y-1.5 text-xs text-content-muted list-disc">
+            <li><strong className="text-content-sub">TR 1000 = 기대치대로 한 상태.</strong> 참석 인원수로 계산한 기대 성과와 정확히 일치하면 1000입니다.</li>
+            <li><strong className="text-content-sub">TR ±100 ≈ 기대 대비 성과가 약 20%p 차이.</strong> 티어 컷 간격이 약 90점이므로 TR 100은 대략 티어 한 계단입니다.</li>
+            <li><strong className="text-content-sub">승 지수</strong> = 이긴 판에서 얻은 점수 ÷ 기대 점수. 1.00이면 기대만큼, 1.30이면 기대보다 30% 더 이겼다는 뜻입니다.</li>
+            <li><strong className="text-content-sub">패 지수</strong> = 진 판에서 잃은 점수 ÷ 기대 점수. 1.00이면 기대만큼이고 낮을수록 좋습니다.</li>
+            <li><strong className="text-content-sub">기대 점수</strong>는 참석 인원수로 정해집니다 — 4인전이면 이길 기대도 질 기대도 25%, 5인전이면 20%입니다.</li>
+            <li>표본이 적으면 신뢰도가 낮아 TR이 1000 쪽으로 당겨집니다.</li>
+          </ul>
+        </details>
       </Card>
 
       <Card>
@@ -294,7 +314,7 @@ export default function RecordsClient({
         <p className="text-xs text-content-muted mt-4">
           가로 = 적극성(1.00 = 기대치. 오른쪽일수록 Win 아니면 Lose로 끝나는
           판이 많고, 왼쪽일수록 무로 지나가는 판이 많습니다) / 세로 = 손익(0 =
-          본전). 판수가 적을수록 점이 크게 튈 수 있어 작고 흐리게 표시됩니다.
+          기준선). 판수가 적을수록 점이 크게 튈 수 있어 작고 흐리게 표시됩니다.
         </p>
       </Card>
 
@@ -338,7 +358,7 @@ export default function RecordsClient({
             unit="회"
           />
           <RecordCategory
-            label="역대 최고 채권 보유"
+            label="역대 최대 잉여 보유"
             tiers={highestBalance}
             unit="점"
           />
@@ -511,12 +531,12 @@ function StyleMapChart({
             ticks={STYLE_MAP_Y_TICKS}
             allowDataOverflow
             tick={{ fontSize: 12, fill: "#94a3b8" }}
-            label={{ value: "손익 (PERF, 0=본전)", angle: -90, position: "insideLeft", fontSize: 12, fill: "#94a3b8" }}
+            label={{ value: "손익 (PERF, 0=기준선)", angle: -90, position: "insideLeft", fontSize: 12, fill: "#94a3b8" }}
           />
           <ReferenceArea x1={1.0} x2={STYLE_MAP_X_DOMAIN[1]} y1={0} y2={STYLE_MAP_Y_DOMAIN[1]} fill="#059669" fillOpacity={0.13} label={{ value: "승부사", position: "insideTopRight", fontSize: 12, fill: "#cbd5e1" }} />
-          <ReferenceArea x1={1.0} x2={STYLE_MAP_X_DOMAIN[1]} y1={STYLE_MAP_Y_DOMAIN[0]} y2={0} fill="#dc2626" fillOpacity={0.13} label={{ value: "불나방", position: "insideBottomRight", fontSize: 12, fill: "#cbd5e1" }} />
+          <ReferenceArea x1={1.0} x2={STYLE_MAP_X_DOMAIN[1]} y1={STYLE_MAP_Y_DOMAIN[0]} y2={0} fill="#dc2626" fillOpacity={0.13} label={{ value: "모험가", position: "insideBottomRight", fontSize: 12, fill: "#cbd5e1" }} />
           <ReferenceArea x1={STYLE_MAP_X_DOMAIN[0]} x2={1.0} y1={0} y2={STYLE_MAP_Y_DOMAIN[1]} fill="#059669" fillOpacity={0.13} label={{ value: "실속파", position: "insideTopLeft", fontSize: 12, fill: "#cbd5e1" }} />
-          <ReferenceArea x1={STYLE_MAP_X_DOMAIN[0]} x2={1.0} y1={STYLE_MAP_Y_DOMAIN[0]} y2={0} fill="#dc2626" fillOpacity={0.13} label={{ value: "조공러", position: "insideBottomLeft", fontSize: 12, fill: "#cbd5e1" }} />
+          <ReferenceArea x1={STYLE_MAP_X_DOMAIN[0]} x2={1.0} y1={STYLE_MAP_Y_DOMAIN[0]} y2={0} fill="#dc2626" fillOpacity={0.13} label={{ value: "기여자", position: "insideBottomLeft", fontSize: 12, fill: "#cbd5e1" }} />
           <ReferenceLine x={1.0} stroke="#cbd5e1" />
           <ReferenceLine y={0} stroke="#cbd5e1" />
           <Tooltip content={<StyleMapTooltip />} />

@@ -1,3 +1,5 @@
+// v2.23: 이 파일의 주석은 debt/creditor 용어를 쓰지만, 화면 표기는 전부
+// 탄소배출권 이전 용어다(PRD §32.2). 계산은 바뀌지 않았다.
 import { GameResult, LedgerAdjustment, Settlement, normalizeSettlementType } from "./types";
 import { activeGames } from "./games";
 

@@ -14,13 +14,11 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { createGame, deleteGame } from "@/lib/actions";
-import { EDIT_WINDOW_MS } from "@/lib/time";
+import { createGame } from "@/lib/actions";
 import { GAME_TYPE_LABELS, GAME_TYPES, GameType } from "@/lib/types";
 import { Card } from "@/components/ui/Card";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { Button } from "@/components/ui/Button";
-import { UndoStack, useUndoStack } from "@/components/ui/UndoStack";
 
 interface ParticipantLite {
   id: string;
@@ -113,14 +111,6 @@ export default function NewGameForm({
   const [error, setError] = useState<string | null>(null);
   const [isSaving, startTransition] = useTransition();
   const router = useRouter();
-
-  // v2.19 (배치 B, PRD §24.9) — "연속 기록 모드": 기록하고 계속 입력을 고르면
-  // 페이지를 떠나지 않고 폼에 머문다. sessionCount는 이 방문에서 몇 판을
-  // 기록했는지 세는 순수 UI 카운터(서버에 저장되지 않음), undo 스택은
-  // §15의 2시간 유예시간을 그대로 재사용한다(되돌리기 = restoreGame로 소프트
-  // 삭제 원복, 스키마 변경 없음).
-  const [sessionCount, setSessionCount] = useState(0);
-  const undo = useUndoStack();
 
   // dnd-kit assigns internal accessibility ids (aria-describedby) via a
   // module-level counter that isn't guaranteed to match between the server
@@ -225,12 +215,12 @@ export default function NewGameForm({
     setTapSelectedId(null);
   }
 
-  function handleConfirm(continueRecording: boolean) {
+  function handleConfirm() {
     if (!pending) return;
     setError(null);
     startTransition(async () => {
       try {
-        const { id, createdAt } = await createGame({
+        await createGame({
           gameType,
           attendeeIds,
           winnerId: pending.winnerId,
@@ -239,33 +229,12 @@ export default function NewGameForm({
           note,
         });
 
-        if (!continueRecording) {
-          // 기존 동작(PRD §18.4) 유지: 곧바로 게임 기록 탭으로 이동해 방금
-          // 쓴 게 제대로 반영됐는지 바로 확인할 수 있게 한다. createGame이
-          // 이미 revalidatePath("/games")를 호출하므로 이 push는 최신
-          // 데이터를 그대로 불러온다. refresh()는 그걸 한 번 더 보장하기
-          // 위한 안전장치.
-          router.push("/games");
-          router.refresh();
-          return;
-        }
-
-        // 연속 기록: 페이지를 떠나지 않는다. 종목·참가자·점수는 유지하고
-        // 승패 선택과 메모만 비운다 — 다음 판을 바로 입력할 수 있게.
-        const summary = `${nameMap.get(pending.winnerId)} ← ${nameMap.get(pending.loserId)} ${points}점 (${GAME_TYPE_LABELS[gameType]})`;
-        setSessionCount((n) => n + 1);
-        undo.push({
-          id,
-          message: `방금: ${summary}`,
-          expiresAt: new Date(createdAt).getTime() + EDIT_WINDOW_MS,
-          // 되돌리기 = 방금 만든 기록을 소프트 삭제하는 것과 동일하므로
-          // deleteGame을 그대로 쓴다(§15 2시간 창 안, restoreGame은 반대
-          // 방향인 "삭제 취소"용).
-          onUndo: () => deleteGame(id),
-        });
-        setPendingResult(null);
-        setTapSelectedId(null);
-        setNote("");
+        // 기존 동작(PRD §18.4) 유지: 곧바로 게임 기록 탭으로 이동해 방금
+        // 쓴 게 제대로 반영됐는지 바로 확인할 수 있게 한다. createGame이
+        // 이미 revalidatePath("/games")를 호출하므로 이 push는 최신
+        // 데이터를 그대로 불러온다. refresh()는 그걸 한 번 더 보장하기
+        // 위한 안전장치.
+        router.push("/games");
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "기록에 실패했습니다.");
@@ -275,19 +244,10 @@ export default function NewGameForm({
 
   const resultDescription = tapSelectedId
     ? `${nameMap.get(tapSelectedId)} 선택됨 (Lose) · Win 상대를 탭하세요`
-    : "드래그하거나, Lose → Win 순서로 탭하세요 (Lose가 Win에게 점수를 지급합니다).";
+    : "드래그하거나, Lose → Win 순서로 탭하세요 (Lose가 Win에게 배출권을 넘깁니다).";
 
   return (
     <div className="space-y-6">
-      {sessionCount > 0 && (
-        <div className="space-y-2">
-          <div className="rounded-xl bg-surface-raised border border-line text-content-sub text-sm px-4 py-2.5">
-            이번에 <span className="font-semibold text-content tabular-nums">{sessionCount}판</span> 기록됨
-          </div>
-          <UndoStack entries={undo.entries} onRemove={undo.remove} />
-        </div>
-      )}
-
       <Card>
         <SectionTitle>1. 종목 선택</SectionTitle>
         <div className="grid grid-cols-3 gap-2 mt-3">
@@ -409,7 +369,7 @@ export default function NewGameForm({
               {nameMap.get(pending.winnerId)}
             </span>
             (Win)에게{" "}
-            <span className="font-semibold">{points}점</span> 지급 ·{" "}
+            <span className="font-semibold">{points}점</span> 이전 ·{" "}
             <span className="font-semibold">{GAME_TYPE_LABELS[gameType]}</span>
           </p>
           <div className="flex gap-3 flex-wrap items-end">
@@ -464,17 +424,10 @@ export default function NewGameForm({
           <div className="flex gap-2 flex-wrap">
             <Button
               variant="primary"
-              onClick={() => handleConfirm(true)}
+              onClick={handleConfirm}
               disabled={isSaving}
               pending={isSaving}
               pendingText="기록 중..."
-            >
-              기록하고 계속 입력
-            </Button>
-            <Button
-              variant="neutral"
-              onClick={() => handleConfirm(false)}
-              disabled={isSaving}
             >
               기록하고 목록으로
             </Button>

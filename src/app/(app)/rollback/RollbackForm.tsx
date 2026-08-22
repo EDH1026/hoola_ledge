@@ -99,8 +99,8 @@ export default function RollbackForm() {
           </p>
           <ul className="text-sm text-red-300 space-y-0.5 tabular-nums">
             <li>게임 기록: {preview.games}건</li>
-            <li>정산/기부 기록: {preview.settlements}건</li>
-            <li>과거 누적기록: {preview.adjustments}건</li>
+            <li>배출권 이전/기부 기록: {preview.settlements}건</li>
+            <li>이월 기록: {preview.adjustments}건</li>
           </ul>
           {preview.games + preview.settlements + preview.adjustments === 0 ? (
             <p className="text-sm text-content-muted">삭제될 대상이 없습니다.</p>
@@ -139,8 +139,8 @@ export default function RollbackForm() {
 
       {result && (
         <div className="rounded-xl bg-emerald-500/10 border border-emerald-800 text-emerald-300 text-sm px-4 py-3 tabular-nums">
-          삭제 완료: 게임 {result.games}건, 정산/기부 {result.settlements}건,
-          과거 누적기록 {result.adjustments}건.
+          삭제 완료: 게임 {result.games}건, 배출권 이전/기부 {result.settlements}건,
+          이월 기록 {result.adjustments}건.
         </div>
       )}
     </Card>

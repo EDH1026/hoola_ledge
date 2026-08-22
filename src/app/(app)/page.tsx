@@ -153,9 +153,9 @@ export default async function DashboardPage() {
         </Card>
 
         <Card>
-          <SectionTitle>정리된 채권-채무 관계 ({transactions.length}건)</SectionTitle>
+          <SectionTitle>정리된 이전 계획 ({transactions.length}건)</SectionTitle>
           {transactions.length === 0 ? (
-            <EmptyState title="정산할 내역이 없습니다." />
+            <EmptyState title="넘길 배출권이 없습니다." />
           ) : (
             <ul className="space-y-2 mt-4 tabular-nums">
               {transactions.slice(0, 6).map((t, i) => (
@@ -174,7 +174,7 @@ export default async function DashboardPage() {
             href="/settlements"
             className="inline-block mt-4 text-xs text-content-muted hover:underline"
           >
-            정산 화면으로 →
+            배출권 화면으로 →
           </Link>
         </Card>
       </div>

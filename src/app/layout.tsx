@@ -14,8 +14,8 @@ const pretendard = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "게임 장부",
-  description: "게임 결과와 채권-채무 관계를 기록하고 정산하는 앱",
+  title: "배출권 장부",
+  description: "게임 결과에 따른 탄소배출권 이전을 기록·관리하는 앱",
 };
 
 export default function RootLayout({

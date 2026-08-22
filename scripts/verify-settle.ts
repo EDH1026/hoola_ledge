@@ -315,7 +315,7 @@ assert(balanceVariant(0) === "even", `case15b: balanceVariant(0) should be "even
 assert(balanceVariant(5) === "positive", `case15b: balanceVariant(5) should be "positive", got ${balanceVariant(5)}`);
 assert(balanceVariant(-5) === "negative", `case15b: balanceVariant(-5) should be "negative", got ${balanceVariant(-5)}`);
 assert(
-  formatBalance(0) === "정산 완료" && !formatBalance(0).includes("0"),
+  formatBalance(0) === "이전 완료" && !formatBalance(0).includes("0"),
   `case15c: formatBalance(0) must not render as a bare "0" (the original bug's symptom), got "${formatBalance(0)}"`
 );
 assert(formatBalance(5) === "+5점", `case15c: formatBalance(5) should be "+5점", got "${formatBalance(5)}"`);

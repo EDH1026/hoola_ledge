@@ -5,6 +5,9 @@ import {
   startOfYear,
   format,
 } from "date-fns";
+// v2.23: doc comments in this file (e.g. "채권" below) still use the old
+// debt/creditor vocabulary, but user-facing screens all use carbon-credit
+// transfer terms now (PRD §32.2). Calculations are unchanged.
 import { GameResult, GameType, Settlement, LedgerAdjustment } from "./types";
 import { activeGames, withinDayKey, computeDailySequenceNumbers } from "./games";
 import { todayInSeoul, quarterKeyOf, addDaysToIsoDate } from "./time";
@@ -727,23 +730,38 @@ export function computeHeadToHeadMatrix(
 export interface NemesisVictimEntry {
   id: string;
   name: string;
-  nemesis: { opponentId: string; opponentName: string; pointsLost: number } | null; // opponent this participant has lost the most points to
-  victim: { opponentId: string; opponentName: string; pointsWon: number } | null; // opponent this participant has taken the most points from
+  nemesis: { opponentId: string; opponentName: string; margin: number } | null; // opponent this participant has the worst net margin against
+  victim: { opponentId: string; opponentName: string; margin: number } | null; // opponent this participant has the best net margin against
 }
 
-/** Each participant's toughest opponent (천적) and easiest opponent (밥), from computeHeadToHead. */
+/**
+ * Each participant's toughest opponent (천적) and easiest opponent (밥), from
+ * computeHeadToHead. v2.23: ranked by per-opponent margin (pointsWon -
+ * pointsLost), not by either raw total, so the same opponent can never be
+ * both nemesis and victim (a high-volume rival with a near-even record used
+ * to qualify as "most lost to" and "most won from" simultaneously). Ties
+ * break on total volume exchanged (thicker sample first), then name.
+ */
 export function computeNemesisAndVictim(
   participants: ParticipantLike[],
   games: GameResult[]
 ): NemesisVictimEntry[] {
   return participants.map((p) => {
     const h2h = computeHeadToHead(participants, games, p.id);
+    const margin = (e: HeadToHeadEntry) => e.pointsWon - e.pointsLost;
+    const volume = (e: HeadToHeadEntry) => e.pointsWon + e.pointsLost;
     const nemesisEntry = h2h
-      .filter((e) => e.pointsLost > 0)
-      .sort((a, b) => b.pointsLost - a.pointsLost)[0];
+      .filter((e) => margin(e) < 0)
+      .sort(
+        (a, b) =>
+          margin(a) - margin(b) || volume(b) - volume(a) || a.opponentName.localeCompare(b.opponentName)
+      )[0];
     const victimEntry = h2h
-      .filter((e) => e.pointsWon > 0)
-      .sort((a, b) => b.pointsWon - a.pointsWon)[0];
+      .filter((e) => margin(e) > 0)
+      .sort(
+        (a, b) =>
+          margin(b) - margin(a) || volume(b) - volume(a) || a.opponentName.localeCompare(b.opponentName)
+      )[0];
     return {
       id: p.id,
       name: p.name,
@@ -751,14 +769,14 @@ export function computeNemesisAndVictim(
         ? {
             opponentId: nemesisEntry.opponentId,
             opponentName: nemesisEntry.opponentName,
-            pointsLost: nemesisEntry.pointsLost,
+            margin: margin(nemesisEntry),
           }
         : null,
       victim: victimEntry
         ? {
             opponentId: victimEntry.opponentId,
             opponentName: victimEntry.opponentName,
-            pointsWon: victimEntry.pointsWon,
+            margin: margin(victimEntry),
           }
         : null,
     };

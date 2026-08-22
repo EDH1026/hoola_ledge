@@ -22,7 +22,7 @@ export default async function AdminLoginPage({
           관리자 비밀번호
         </h1>
         <p className="text-sm text-content-muted mb-6">
-          참가자 풀 관리와 과거 누적기록 입력은 관리자 인증이 필요합니다.
+          참가자 풀 관리와 이월 기록 입력은 관리자 인증이 필요합니다.
         </p>
         <form action={adminLoginAction} className="space-y-4">
           <input type="hidden" name="next" value={next} />

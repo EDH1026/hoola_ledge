@@ -14,5 +14,5 @@ export function balanceVariant(amount: number): BalanceVariant {
 export function formatBalance(amount: number): string {
   if (amount > 0) return `+${amount}점`;
   if (amount < 0) return `${amount}점`;
-  return "정산 완료";
+  return "이전 완료";
 }

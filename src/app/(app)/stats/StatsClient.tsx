@@ -590,7 +590,7 @@ export default function StatsClient({
                     <th className="py-2 pr-4">패</th>
                     <th className="py-2 pr-4">승률A</th>
                     <th className="py-2 pr-4">승률B</th>
-                    <th className="py-2 pr-4">순점수</th>
+                    <th className="py-2 pr-4">순증감</th>
                     <th className="py-2 pr-4" />
                   </tr>
                 </thead>
@@ -656,12 +656,16 @@ export default function StatsClient({
                 </tbody>
               </table>
             </div>
+
+            <p className="text-xs text-content-muted mt-3">
+              승률A = 승 ÷ (승 + 패) · 승률B = 승 ÷ (승 + 무 + 패)
+            </p>
           </>
         )}
       </Card>
 
       <Card>
-        <SectionTitle description="행 참가자가 열 참가자를 상대로 딴 순점수입니다. 아래 범례의 5단계로 표시됩니다.">
+        <SectionTitle description="행 참가자가 열 참가자를 상대로 얻은 순증감입니다. 아래 범례의 5단계로 표시됩니다.">
           상대 전적 매트릭스
         </SectionTitle>
         <div className="mt-3">
@@ -757,7 +761,7 @@ export default function StatsClient({
       </Card>
 
       <Card>
-        <SectionTitle description="천적 = 가장 많이 진 상대, 밥 = 가장 많이 이긴 상대.">
+        <SectionTitle description="천적 = 마진이 가장 나쁜 상대, 밥 = 마진이 가장 좋은 상대 (마진 = 받은 배출권 − 넘긴 배출권)">
           천적 / 밥
         </SectionTitle>
         <div className="mt-3">
@@ -792,12 +796,12 @@ export default function StatsClient({
                       <td className="py-2 pr-4 font-medium text-content">{nv.name}</td>
                       <td className="py-2 pr-4 text-lose">
                         {nv.nemesis
-                          ? `${nv.nemesis.opponentName} (-${nv.nemesis.pointsLost})`
+                          ? `${nv.nemesis.opponentName} (${nv.nemesis.margin})`
                           : "-"}
                       </td>
                       <td className="py-2 pr-4 text-emerald-400">
                         {nv.victim
-                          ? `${nv.victim.opponentName} (+${nv.victim.pointsWon})`
+                          ? `${nv.victim.opponentName} (+${nv.victim.margin})`
                           : "-"}
                       </td>
                     </tr>
@@ -856,7 +860,7 @@ export default function StatsClient({
             />
           }
         >
-          참가자별 누적 순점수 추이
+          참가자별 누적 순증감 추이
         </SectionTitle>
         <div className="mt-3">
           <GameTypeFilterButtons value={cumulativeGameType} onChange={setCumulativeGameType} />
@@ -1011,9 +1015,9 @@ function HeadToHeadInline({
         <thead>
           <tr className="text-left text-content-muted text-xs">
             <th className="py-2 pr-4">상대</th>
-            <th className="py-2 pr-4">딴 점수</th>
-            <th className="py-2 pr-4">잃은 점수</th>
-            <th className="py-2 pr-4">순점수</th>
+            <th className="py-2 pr-4">받은 배출권</th>
+            <th className="py-2 pr-4">넘긴 배출권</th>
+            <th className="py-2 pr-4">순증감</th>
           </tr>
         </thead>
         <tbody>

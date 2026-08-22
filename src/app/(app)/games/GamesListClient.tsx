@@ -391,7 +391,7 @@ export default function GamesListClient({
                   </>
                 )}
               </span>
-              <span className="text-xs text-content-muted shrink-0">인별 점수 보기</span>
+              <span className="text-xs text-content-muted shrink-0">인별 배출권 보기</span>
             </summary>
             <div className="overflow-x-auto mt-3">
               <table className="w-full text-sm tabular-nums">
@@ -399,9 +399,9 @@ export default function GamesListClient({
                   <tr className="text-left text-content-muted text-xs">
                     <th className="py-1.5 pr-4">순위</th>
                     <th className="py-1.5 pr-4">이름</th>
-                    <th className="py-1.5 pr-4">딴 점수</th>
-                    <th className="py-1.5 pr-4">잃은 점수</th>
-                    <th className="py-1.5 pr-4">순점수</th>
+                    <th className="py-1.5 pr-4">받은 배출권</th>
+                    <th className="py-1.5 pr-4">넘긴 배출권</th>
+                    <th className="py-1.5 pr-4">순증감</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1047,7 +1047,7 @@ function GameEditForm({
             />
             활성 상태
             <span className="text-xs text-content-muted">
-              (해제 시 삭제된 것처럼 정산·통계에서 제외됩니다)
+              (해제 시 삭제된 것처럼 배출권·통계에서 제외됩니다)
             </span>
           </label>
         </>

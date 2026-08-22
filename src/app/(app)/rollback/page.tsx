@@ -11,7 +11,7 @@ export default function RollbackPage() {
         </div>
         <h1 className="text-2xl font-bold">데이터 롤백</h1>
         <p className="text-sm text-slate-400 mt-1">
-          지정한 시각 이후에 생성된 게임·정산·과거 누적기록을 완전히(하드)
+          지정한 시각 이후에 생성된 게임·배출권 이전·이월 기록을 완전히(하드)
           삭제합니다. 참가자 풀 정보는 대상에서 제외됩니다.
         </p>
       </div>

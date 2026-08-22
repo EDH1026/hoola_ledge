@@ -3,6 +3,7 @@
 import {
   computeQuarterlyTiers,
   computeStyleMap,
+  computeNemesisAndVictim,
   TIER_MIN_WEIGHT,
   TierRow,
   StyleMapPoint,
@@ -321,6 +322,93 @@ function styleRowFor(points: StyleMapPoint[], id: string): StyleMapPoint | undef
   const p89 = styleRowFor(points, "P89");
   assert(p89 !== undefined && p89.games === 1, "case9: a participant with a single 89-day-old game must appear with games=1");
   assert(styleRowFor(points, "Ghost") === undefined, "case9: a participant with no games at all must be excluded");
+}
+
+// Case 10 (v2.23 §32.8): nemesis/victim are now margin-based, not raw-total
+// based, so the same opponent can never be picked as both.
+{
+  // 10a/10b/10c: A vs B is a high-volume near-even rivalry (8 wins, 9
+  // losses, 1 point each -> margin -1) and A vs C is lopsided in A's favor
+  // (2 wins, 0 losses -> margin +2). Under the OLD total-based logic, B has
+  // both the most pointsLost (9) and the most pointsWon (8) of any of A's
+  // opponents, so B would be picked as both nemesis AND victim -- the exact
+  // contradiction this change fixes. Under the new margin-based logic only
+  // C has a positive margin, so B can only ever be the nemesis.
+  const participants: ParticipantLike[] = [
+    { id: "A", name: "A", active: true },
+    { id: "B", name: "B", active: true },
+    { id: "C", name: "C", active: true },
+  ];
+  const games: GameResult[] = [];
+  let gid = 0;
+  for (let i = 0; i < 8; i++) games.push(game(`nv${gid++}`, "2026-02-01", ["A", "B"], "A", "B"));
+  for (let i = 0; i < 9; i++) games.push(game(`nv${gid++}`, "2026-02-01", ["A", "B"], "B", "A"));
+  for (let i = 0; i < 2; i++) games.push(game(`nv${gid++}`, "2026-02-01", ["A", "C"], "A", "C"));
+
+  const entries = computeNemesisAndVictim(participants, games);
+  const a = entries.find((e) => e.id === "A");
+  if (!a) throw new Error("case10: no NemesisVictimEntry for A");
+
+  assert(a.nemesis?.opponentId === "B", `case10a: A's nemesis should be B (margin -1), got ${JSON.stringify(a.nemesis)}`);
+  assert(a.victim?.opponentId === "C", `case10b: A's victim should be C (margin +2), got ${JSON.stringify(a.victim)}`);
+  assert(a.nemesis?.margin === -1, `case10a: A's nemesis margin should be -1, got ${a.nemesis?.margin}`);
+  assert(a.victim?.margin === 2, `case10b: A's victim margin should be +2, got ${a.victim?.margin}`);
+  assert(
+    a.nemesis?.opponentId !== a.victim?.opponentId,
+    `case10c: nemesis and victim must never be the same opponent (old total-based logic would pick B for both), got nemesis=${a.nemesis?.opponentId} victim=${a.victim?.opponentId}`
+  );
+
+  // No participant, across the whole dataset, should ever have
+  // nemesis.opponentId === victim.opponentId.
+  for (const e of entries) {
+    assert(
+      e.nemesis === null || e.victim === null || e.nemesis.opponentId !== e.victim.opponentId,
+      `case10c: ${e.name} must not have the same opponent as both nemesis and victim, got ${e.nemesis?.opponentId}`
+    );
+  }
+}
+
+// Case 11: all-zero-or-positive margins -> nemesis is null (no opponent has
+// a negative margin to qualify).
+{
+  const participants: ParticipantLike[] = [
+    { id: "E", name: "E", active: true },
+    { id: "F", name: "F", active: true },
+  ];
+  const games: GameResult[] = [
+    game("z1", "2026-02-01", ["E", "F"], "E", "F"),
+    game("z2", "2026-02-02", ["E", "F"], "F", "E"),
+  ];
+  const entries = computeNemesisAndVictim(participants, games);
+  const e = entries.find((x) => x.id === "E");
+  if (!e) throw new Error("case11: no NemesisVictimEntry for E");
+  assert(e.nemesis === null, `case11: E's margin against F is 0 (not negative) -> nemesis should be null, got ${JSON.stringify(e.nemesis)}`);
+  assert(e.victim === null, `case11: E's margin against F is 0 (not positive) -> victim should be null, got ${JSON.stringify(e.victim)}`);
+}
+
+// Case 12: tie-break. G has the same margin (-1) against both H and I, but
+// more total volume was exchanged with H (7 points: 3W/4L) than with I (3
+// points: 1W/2L) -> H should win the tie-break as the thicker sample.
+{
+  const participants: ParticipantLike[] = [
+    { id: "G", name: "G", active: true },
+    { id: "H", name: "H", active: true },
+    { id: "I", name: "I", active: true },
+  ];
+  const games: GameResult[] = [];
+  let gid = 0;
+  for (let i = 0; i < 3; i++) games.push(game(`t${gid++}`, "2026-02-01", ["G", "H"], "G", "H"));
+  for (let i = 0; i < 4; i++) games.push(game(`t${gid++}`, "2026-02-01", ["G", "H"], "H", "G"));
+  for (let i = 0; i < 1; i++) games.push(game(`t${gid++}`, "2026-02-01", ["G", "I"], "G", "I"));
+  for (let i = 0; i < 2; i++) games.push(game(`t${gid++}`, "2026-02-01", ["G", "I"], "I", "G"));
+
+  const entries = computeNemesisAndVictim(participants, games);
+  const g = entries.find((x) => x.id === "G");
+  if (!g) throw new Error("case12: no NemesisVictimEntry for G");
+  assert(
+    g.nemesis?.opponentId === "H",
+    `case12: both H and I are margin -1, H has more volume (7 vs 3) so should win the tie-break, got ${JSON.stringify(g.nemesis)}`
+  );
 }
 
 console.log("Done.");

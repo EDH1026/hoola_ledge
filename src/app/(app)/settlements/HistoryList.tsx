@@ -33,9 +33,9 @@ export type HistoryFilterValue = "all" | "payment" | "donation" | "adjustment";
 
 const FILTER_OPTIONS: { value: HistoryFilterValue; label: string }[] = [
   { value: "all", label: "전체" },
-  { value: "payment", label: "실제 정산" },
+  { value: "payment", label: "배출권 이전" },
   { value: "donation", label: "기부" },
-  { value: "adjustment", label: "과거 기록" },
+  { value: "adjustment", label: "이월 기록" },
 ];
 
 // v2.19 (배치 C, PRD §24.13) — 이력이 상한 없이 전부 한 번에 렌더됐다.
@@ -179,7 +179,7 @@ export default function HistoryList({
                       type="button"
                       onClick={() => handleCancel(row)}
                       disabled={isPending}
-                      aria-label="이 정산 취소"
+                      aria-label="이 이전 취소"
                       className="w-11 h-11 shrink-0 flex items-center justify-center rounded-lg text-content-sub hover:bg-red-500/15 hover:text-red-300 transition active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:opacity-50 disabled:pointer-events-none"
                     >
                       <Trash2 className="w-4 h-4" aria-hidden />

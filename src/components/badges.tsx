@@ -33,7 +33,7 @@ const SETTLEMENT_TYPE_STYLES: Record<WritableSettlementType, string> = {
 };
 
 const SETTLEMENT_TYPE_LABELS: Record<WritableSettlementType, string> = {
-  payment: "실제 정산",
+  payment: "배출권 이전",
   donation: "기부",
 };
 
@@ -94,7 +94,7 @@ export function GameDayStatusChip({ status }: { status: "live" | "closed" }) {
 export function LedgerAdjustmentBadge() {
   return (
     <span className="inline-flex items-center rounded-full border border-line bg-surface-raised text-content-sub px-2 py-0.5 text-xs font-medium whitespace-nowrap">
-      과거 기록
+      이월 기록
     </span>
   );
 }

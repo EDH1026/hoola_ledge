@@ -1,0 +1,142 @@
+import Link from "next/link";
+import { Card } from "@/components/ui/Card";
+import { SectionTitle } from "@/components/ui/SectionTitle";
+
+interface ReductionAction {
+  action: string;
+  basis: string;
+}
+
+interface ReductionCategory {
+  title: string;
+  actions: ReductionAction[];
+}
+
+// PRD §32.4.2 — 1점 = 10kg 기준. 계수는 국내 평균 기준 근사치이며 공식
+// 산정값이 아니다(면책 문구 참고). 화면 순서는 PRD 표 순서를 그대로 따른다.
+const REDUCTION_CATEGORIES: ReductionCategory[] = [
+  {
+    title: "이동",
+    actions: [
+      { action: "자동차 대신 걷거나 자전거로 62km 이동", basis: "승용차 1km ≈ 0.16kg" },
+      { action: "왕복 20km 자전거 출퇴근 3일 연속", basis: "위와 동일" },
+      { action: "국내선 비행기 대신 KTX·버스로 1회 이동", basis: "김포–제주 편도 ≈ 100kg → 10점" },
+      { action: "엘리베이터 대신 계단으로 누적 500층", basis: "승강기 운행 전력 기준" },
+    ],
+  },
+  {
+    title: "냉난방·전기",
+    actions: [
+      { action: "한여름 에어컨 15시간 끄고 버티기", basis: "1.5kW × 0.459kg/kWh ≈ 0.69kg/시간" },
+      { action: "겨울 난방 설정온도 2℃ 낮추고 2주", basis: "" },
+      { action: "전기건조기 대신 자연건조 7회 (널고 걷기 포함)", basis: "1회 3kWh ≈ 1.38kg" },
+      { action: "대기전력 전부 뽑고 40일 유지", basis: "가구 평균 대기전력 기준" },
+      { action: "전기 22kWh 절약", basis: "한전 배출계수 0.459kg/kWh" },
+    ],
+  },
+  {
+    title: "물·온수",
+    actions: [
+      { action: "온수 샤워 대신 냉수 샤워 6회", basis: "10분 온수 샤워 ≈ 1.8kg" },
+      { action: "세탁을 찬물로 17회", basis: "1회당 ≈ 0.6kg 절감" },
+    ],
+  },
+  {
+    title: "식사·소비",
+    actions: [
+      { action: "소고기 1인분(200g)을 채식으로 대체", basis: "소고기 1kg ≈ 60kg → 1.2점" },
+      { action: "배달 음식 20회 참고 직접 조리·설거지", basis: "1회 포장·배송 ≈ 0.5kg" },
+      { action: "새 티셔츠 2벌 안 사기", basis: "1벌 생산 ≈ 6kg" },
+      { action: "새 청바지 안 사고 수선해서 입기", basis: "1벌 생산 ≈ 29kg → 약 3점" },
+    ],
+  },
+  {
+    title: "흡수 (장기)",
+    actions: [
+      { action: "나무 1그루 심고 1년 6개월 관리", basis: "30년생 소나무 연간 흡수 ≈ 6.6kg" },
+    ],
+  },
+];
+
+export default function PrinciplesPage() {
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-content">운영원칙</h1>
+        <p className="text-sm text-content-muted mt-1">
+          이 앱의 점수는 탄소배출권입니다. 게임을 하면 배출권이 오가고,
+          보유량이 마이너스가 되면 실제 감축 행동으로 채워 넣어야 합니다.
+        </p>
+      </div>
+
+      <Card className="text-center py-6 sm:py-8">
+        <p className="text-xs text-content-muted mb-2">환산 규칙</p>
+        <p className="text-3xl sm:text-4xl font-bold text-content tabular-nums">
+          1점 = 10kg CO₂e
+        </p>
+        <p className="text-sm text-content-muted mt-1">배출권</p>
+      </Card>
+
+      <Card>
+        <SectionTitle>의무 발생</SectionTitle>
+        <p className="text-sm text-content mt-3">
+          게임에서 진 사람은 이긴 사람에게 해당 수량의 배출권을 넘깁니다.
+        </p>
+      </Card>
+
+      <Card>
+        <SectionTitle description="사진·기록·영수증 등으로 인증하면 해당 수량을 확보한 것으로 봅니다.">
+          부족 시 확보 방법
+        </SectionTitle>
+        <p className="text-sm text-content mt-3">
+          보유량이 마이너스면 아래 감축 행동을 실제로 수행하고 인증해
+          배출권을 확보해야 합니다.
+        </p>
+        <p className="text-sm font-medium text-content mt-3">
+          1점을 갚으려면 62km를 걸어야 합니다. 하루에 안 됩니다.
+        </p>
+      </Card>
+
+      <Card>
+        <SectionTitle description="전부 1점 = 10kg 기준입니다.">감축 행동 목록</SectionTitle>
+        <div className="space-y-5 mt-4">
+          {REDUCTION_CATEGORIES.map((category) => (
+            <div key={category.title}>
+              <h3 className="text-sm font-semibold text-content-sub mb-2">
+                {category.title}
+              </h3>
+              <ul className="space-y-2">
+                {category.actions.map((item) => (
+                  <li
+                    key={item.action}
+                    className="rounded-lg bg-surface-raised px-3 py-2"
+                  >
+                    <p className="text-sm text-content">{item.action}</p>
+                    {item.basis && (
+                      <p className="text-xs text-content-muted mt-0.5">{item.basis}</p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Card>
+        <SectionTitle>인증 규칙</SectionTitle>
+        <p className="text-sm text-content mt-3">
+          사진·기록·영수증 등으로 인증하면 해당 수량을 확보한 것으로 보고,{" "}
+          <Link href="/settlements" className="underline">
+            배출권
+          </Link>{" "}
+          화면에서 이전 처리합니다.
+        </p>
+      </Card>
+
+      <p className="text-xs text-content-muted text-center">
+        위 계수는 국내 평균 기준 근사치이며 공식 산정값이 아닙니다.
+      </p>
+    </div>
+  );
+}

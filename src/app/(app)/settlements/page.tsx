@@ -129,34 +129,39 @@ export default async function SettlementsPage({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-content">정산</h1>
+        <h1 className="text-2xl font-bold text-content">배출권 이전</h1>
         <p className="text-sm text-content-muted mt-1">
-          그동안 쌓인 채권-채무 관계를 최소 거래 수로 간소화해서 보여줍니다. 실제로
-          점수를 상품으로 교환했다면 아래에서 정산 완료 처리를, 그냥 누군가에게
-          점수를 주고 싶다면 기부로 기록해주세요.
+          그동안 쌓인 배출권 이전 관계를 최소 이전 횟수로 간소화해서 보여줍니다.
+          감축 행동을 인증했다면 아래에서 이전 완료 처리를, 그냥 누군가에게
+          점수를 주고 싶다면 기부로 기록해주세요. 감축 행동 목록은{" "}
+          <Link href="/principles" className="underline">
+            운영원칙
+          </Link>
+          에서 확인할 수 있습니다.
         </p>
       </div>
 
       <Card>
-        <SectionTitle>참가자별 순 잔액</SectionTitle>
+        <SectionTitle>참가자별 순 보유량</SectionTitle>
         {balanceList.length === 0 ? (
           <div className="mt-4">
-            <EmptyState title="잔액이 없습니다." />
+            <EmptyState title="보유량이 없습니다." />
           </div>
         ) : (
           <ul className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-4 tabular-nums">
             {/* v2.19 (배치 C, PRD §24.13, 기능 수정) — 예전엔 `amount > 0`
                 하나로만 갈라서 잔액이 정확히 0인 사람이 빨간 "0"으로 표시
                 됐다(정산이 끝난 사람이 채무자처럼 보임). 3분기로 나눈다.
-                금액 접미사("점")도 이 화면만 빠져 있어 이력·랭킹과 맞춘다. */}
+                금액 접미사("점")도 이 화면만 빠져 있어 이력·랭킹과 맞춘다.
+                v2.23 — kg 병기는 이 카드에서만 한다(PRD §32.2 주석). */}
             {balanceList.map((b) => (
               <li
                 key={b.id}
-                className="flex items-center justify-between rounded-lg bg-surface-raised px-3 py-2 text-sm"
+                className="flex items-center justify-between gap-2 rounded-lg bg-surface-raised px-3 py-2 text-sm"
               >
-                <span className="text-content">{b.name}</span>
+                <span className="min-w-0 flex-1 truncate text-content">{b.name}</span>
                 <span
-                  className={`font-semibold ${
+                  className={`shrink-0 text-right font-semibold ${
                     balanceVariant(b.amount) === "positive"
                       ? "text-win"
                       : balanceVariant(b.amount) === "negative"
@@ -164,16 +169,22 @@ export default async function SettlementsPage({
                       : "text-content-muted"
                   }`}
                 >
-                  {formatBalance(b.amount)}
+                  <span className="block whitespace-nowrap">{formatBalance(b.amount)}</span>
+                  {b.amount !== 0 && (
+                    <span className="block whitespace-nowrap text-xs font-normal text-content-faint">
+                      ({b.amount > 0 ? "+" : ""}
+                      {b.amount * 10}kg)
+                    </span>
+                  )}
                 </span>
               </li>
             ))}
           </ul>
         )}
         <p className="text-xs text-content-muted mt-3">
-          양수(+)는 받을 점수, 음수(-)는 줘야 할 점수입니다. 게임·정산·기부·
+          양수(+)는 받을 배출권, 음수(-)는 넘겨야 할 배출권입니다. 게임·이전·기부·
           <Link href="/adjustments" className="underline">
-            과거 누적기록
+            이월 기록
           </Link>
           이 모두 반영된 값입니다.
         </p>
@@ -253,7 +264,7 @@ export default async function SettlementsPage({
 
       <Card>
         <SectionTitle description="기록 후 2시간이 지난 항목은 관리자만 취소할 수 있습니다.">
-          정산 & 조정 이력 ({history.length}건)
+          이전 & 이월 이력 ({history.length}건)
         </SectionTitle>
         <div className="mt-3">
           <HistoryList
