@@ -5,12 +5,12 @@ import { adminLogoutAction } from "../admin-login/actions";
 import { ADMIN_COOKIE_NAME, verifyAdminCookie } from "@/lib/auth";
 
 const NAV_ITEMS = [
-  { href: "/", label: "대시보드" },
-  { href: "/games", label: "게임" },
-  { href: "/settlements", label: "배출권" },
-  { href: "/stats", label: "통계" },
-  { href: "/records", label: "통산기록" },
-  { href: "/principles", label: "운영원칙" },
+  { href: "/", label: "대시보드", shortLabel: "홈" },
+  { href: "/games", label: "게임", shortLabel: "게임" },
+  { href: "/settlements", label: "배출권", shortLabel: "배출권" },
+  { href: "/stats", label: "통계", shortLabel: "통계" },
+  { href: "/records", label: "통산기록", shortLabel: "통산" },
+  { href: "/principles", label: "운영원칙", shortLabel: "원칙" },
 ];
 
 // v2.23 (PRD §32.5) — 관리자 전용 화면 3개는 헤더 탭에서 내려가고 푸터에서만
@@ -34,20 +34,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-line bg-surface sticky top-0 z-10">
         {/* v2.23 (PRD §32.5) — 탭이 6개로 늘면서 390px 폭에서 가로 스크롤로는
-            다 안 들어간다. 예전엔 overflow-x-auto + 페이드 그라데이션으로
-            "더 있음"을 알렸지만, 스크롤은 신호가 약해 탭을 놓치기 쉽다.
-            flex-wrap으로 안 들어가면 2줄로 감기게 하고, 그에 맞춰 높이도
-            h-14 고정 대신 min-h-14 py-2로 풀었다. 관리자·로그아웃 버튼은
-            거의 안 쓰는데 우측을 고정 점유하고 있었으므로 푸터로 옮겼다. */}
-        <div className="max-w-5xl mx-auto px-4 py-2 min-h-14 flex items-center">
-          <nav className="flex items-center gap-1 flex-wrap">
+            다 안 들어간다. 관리자·로그아웃 버튼은 거의 안 쓰는데 우측을
+            고정 점유하고 있었으므로 푸터로 옮겼다.
+            v2.24 (PRD §34.1) — flex-wrap으로 2줄을 허용했었지만 실사용해보니
+            한 줄이 맞다. 대신 모바일에서는 짧은 라벨(`shortLabel`)로 갈아
+            끼우고 `flex-1 min-w-0 justify-center`로 6칸을 균등 분배해 폭을
+            맞춘다 — sm 이상에서는 전체 라벨로 되돌아간다. */}
+        <div className="max-w-5xl mx-auto px-4 h-14 flex items-center">
+          <nav className="flex items-center gap-1">
             {NAV_ITEMS.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
-                className="min-h-11 inline-flex items-center px-3 rounded-lg text-sm font-medium text-content-sub hover:bg-slate-700 hover:text-content whitespace-nowrap transition"
+                className="flex-1 min-w-0 min-h-11 inline-flex items-center justify-center px-2 rounded-lg text-sm font-medium text-content-sub hover:bg-slate-700 hover:text-content whitespace-nowrap transition"
               >
-                {item.label}
+                <span className="sm:hidden">{item.shortLabel}</span>
+                <span className="hidden sm:inline">{item.label}</span>
               </Link>
             ))}
           </nav>

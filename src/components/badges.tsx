@@ -34,7 +34,7 @@ const SETTLEMENT_TYPE_STYLES: Record<WritableSettlementType, string> = {
 
 const SETTLEMENT_TYPE_LABELS: Record<WritableSettlementType, string> = {
   payment: "배출권 이전",
-  donation: "기부",
+  donation: "면죄부",
 };
 
 // Accepts the legacy "waiver" value too (normalized to "donation" before

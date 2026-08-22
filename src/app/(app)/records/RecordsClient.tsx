@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import {
   ResponsiveContainer,
   ScatterChart,
@@ -36,6 +36,8 @@ import {
   Tier,
   TierRow,
   TIER_MIN_WEIGHT,
+  TIER_CUTS,
+  TIER_ORDER,
 } from "@/lib/stats";
 
 interface ParticipantLite {
@@ -67,6 +69,24 @@ const TIER_RANK: Record<Tier, number> = {
 };
 
 type TierDelta = "up" | "down" | "same" | "new";
+
+// v2.24 (PRD §34.4) — TR 구간표를 TIER_CUTS/TIER_ORDER에서 생성한다(하드코딩
+// 금지 — 컷을 조정하면 화면이 그대로 따라오도록). TIER_ORDER[i]는
+// "tr < TIER_CUTS[i]"에 해당하는 티어이므로, 구간의 하한은 바로 앞 컷
+// (TIER_CUTS[i-1]), 상한은 TIER_CUTS[i]-1이다. "배치 중"은 TR 구간이 아니라
+// 표본 가중치 게이트라 별도 행으로 앞에 둔다.
+const TIER_RANGE_ROWS: { tier: Tier; range: string }[] = [
+  { tier: "unranked", range: `표본 부족 (분기 누적 가중치 ${TIER_MIN_WEIGHT.toFixed(1)} 미만, 약 9판)` },
+  ...TIER_ORDER.map((tier, i) => {
+    const range =
+      i === 0
+        ? `${TIER_CUTS[0]} 미만`
+        : i === TIER_ORDER.length - 1
+        ? `${TIER_CUTS[i - 1]} 이상`
+        : `${TIER_CUTS[i - 1]} ~ ${TIER_CUTS[i] - 1}`;
+    return { tier, range };
+  }),
+];
 
 // PRD §16.8 — fixed so a single low-sample outlier can't compress everyone
 // else toward the center by auto-scaling. Bounds come from the same
@@ -268,7 +288,15 @@ export default function RecordsClient({
             <span className="group-open:hidden">티어는 어떻게 매겨지나요?</span>
             <span className="hidden group-open:inline">티어는 어떻게 매겨지나요? (접기)</span>
           </summary>
-          <ul className="mt-2 ml-5 space-y-1.5 text-xs text-content-muted list-disc">
+          <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs items-center">
+            {TIER_RANGE_ROWS.map(({ tier, range }) => (
+              <Fragment key={tier}>
+                <TierBadge tier={tier} size="sm" />
+                <span className="text-content-muted">{range}</span>
+              </Fragment>
+            ))}
+          </div>
+          <ul className="mt-3 ml-5 space-y-1.5 text-xs text-content-muted list-disc">
             <li><strong className="text-content-sub">TR 1000 = 기대치대로 한 상태.</strong> 참석 인원수로 계산한 기대 성과와 정확히 일치하면 1000입니다.</li>
             <li><strong className="text-content-sub">TR ±100 ≈ 기대 대비 성과가 약 20%p 차이.</strong> 티어 컷 간격이 약 90점이므로 TR 100은 대략 티어 한 계단입니다.</li>
             <li><strong className="text-content-sub">승 지수</strong> = 이긴 판에서 얻은 점수 ÷ 기대 점수. 1.00이면 기대만큼, 1.30이면 기대보다 30% 더 이겼다는 뜻입니다.</li>
@@ -313,8 +341,10 @@ export default function RecordsClient({
 
         <p className="text-xs text-content-muted mt-4">
           가로 = 적극성(1.00 = 기대치. 오른쪽일수록 Win 아니면 Lose로 끝나는
-          판이 많고, 왼쪽일수록 무로 지나가는 판이 많습니다) / 세로 = 손익(0 =
-          기준선). 판수가 적을수록 점이 크게 튈 수 있어 작고 흐리게 표시됩니다.
+          판이 많고, 왼쪽일수록 무로 지나가는 판이 많습니다) / 세로 = 환경
+          영향(0 = 기준선. 위쪽일수록 배출권을 확보하고, 아래쪽일수록 계속
+          넘깁니다). 판수가 적을수록 점이 크게 튈 수 있어 작고 흐리게
+          표시됩니다.
         </p>
       </Card>
 
@@ -478,7 +508,7 @@ function StyleMapTooltip({
     <div className="bg-surface border border-line rounded-lg shadow-sm px-3 py-2 text-xs space-y-0.5 tabular-nums">
       <p className="font-semibold text-content">{p.name}</p>
       <p className="text-content-muted">적극성 {p.engagement.toFixed(2)}</p>
-      <p className="text-content-muted">손익 {p.performance >= 0 ? "+" : ""}{p.performance.toFixed(2)}</p>
+      <p className="text-content-muted">환경 영향 {p.performance >= 0 ? "+" : ""}{p.performance.toFixed(2)}</p>
       <p className="text-content-muted">승 지수 {p.winIndex.toFixed(2)} · 패 지수 {p.lossIndex.toFixed(2)}</p>
       <p className="text-content-muted">최근 90일 {p.games}판</p>
       {p.clamped && <p className="text-amber-400">* 실제 값은 표시 범위를 벗어남</p>}
@@ -487,7 +517,7 @@ function StyleMapTooltip({
 }
 
 /**
- * PRD §16.8 fixed-domain scatter — X=적극성(ENG), Y=손익(PERF), never auto-scales.
+ * PRD §16.8 fixed-domain scatter — X=적극성(ENG), Y=환경 영향(PERF), never auto-scales.
  *
  * v2.19 (배치 C, PRD §24.13) 조정:
  *  - 이름 라벨(LabelList)은 점 위에 항상 표시한다. 도메인이 고정이라 값이
@@ -531,12 +561,12 @@ function StyleMapChart({
             ticks={STYLE_MAP_Y_TICKS}
             allowDataOverflow
             tick={{ fontSize: 12, fill: "#94a3b8" }}
-            label={{ value: "손익 (PERF, 0=기준선)", angle: -90, position: "insideLeft", fontSize: 12, fill: "#94a3b8" }}
+            label={{ value: "환경 영향 (PERF, 0=기준선)", angle: -90, position: "insideLeft", fontSize: 12, fill: "#94a3b8" }}
           />
-          <ReferenceArea x1={1.0} x2={STYLE_MAP_X_DOMAIN[1]} y1={0} y2={STYLE_MAP_Y_DOMAIN[1]} fill="#059669" fillOpacity={0.13} label={{ value: "승부사", position: "insideTopRight", fontSize: 12, fill: "#cbd5e1" }} />
-          <ReferenceArea x1={1.0} x2={STYLE_MAP_X_DOMAIN[1]} y1={STYLE_MAP_Y_DOMAIN[0]} y2={0} fill="#dc2626" fillOpacity={0.13} label={{ value: "모험가", position: "insideBottomRight", fontSize: 12, fill: "#cbd5e1" }} />
-          <ReferenceArea x1={STYLE_MAP_X_DOMAIN[0]} x2={1.0} y1={0} y2={STYLE_MAP_Y_DOMAIN[1]} fill="#059669" fillOpacity={0.13} label={{ value: "실속파", position: "insideTopLeft", fontSize: 12, fill: "#cbd5e1" }} />
-          <ReferenceArea x1={STYLE_MAP_X_DOMAIN[0]} x2={1.0} y1={STYLE_MAP_Y_DOMAIN[0]} y2={0} fill="#dc2626" fillOpacity={0.13} label={{ value: "기여자", position: "insideBottomLeft", fontSize: 12, fill: "#cbd5e1" }} />
+          <ReferenceArea x1={1.0} x2={STYLE_MAP_X_DOMAIN[1]} y1={0} y2={STYLE_MAP_Y_DOMAIN[1]} fill="#059669" fillOpacity={0.13} label={{ value: "탄소 파수꾼", position: "insideTopRight", fontSize: 11, fill: "#cbd5e1" }} />
+          <ReferenceArea x1={1.0} x2={STYLE_MAP_X_DOMAIN[1]} y1={STYLE_MAP_Y_DOMAIN[0]} y2={0} fill="#dc2626" fillOpacity={0.13} label={{ value: "탄소 폭주족", position: "insideBottomRight", fontSize: 11, fill: "#cbd5e1" }} />
+          <ReferenceArea x1={STYLE_MAP_X_DOMAIN[0]} x2={1.0} y1={0} y2={STYLE_MAP_Y_DOMAIN[1]} fill="#059669" fillOpacity={0.13} label={{ value: "저탄소 생활자", position: "insideTopLeft", fontSize: 11, fill: "#cbd5e1" }} />
+          <ReferenceArea x1={STYLE_MAP_X_DOMAIN[0]} x2={1.0} y1={STYLE_MAP_Y_DOMAIN[0]} y2={0} fill="#dc2626" fillOpacity={0.13} label={{ value: "은근한 굴뚝", position: "insideBottomLeft", fontSize: 11, fill: "#cbd5e1" }} />
           <ReferenceLine x={1.0} stroke="#cbd5e1" />
           <ReferenceLine y={0} stroke="#cbd5e1" />
           <Tooltip content={<StyleMapTooltip />} />

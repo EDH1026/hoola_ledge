@@ -423,7 +423,7 @@ export type Tier =
   | "master"
   | "challenger";
 
-const TIER_ORDER: Exclude<Tier, "unranked">[] = [
+export const TIER_ORDER: Exclude<Tier, "unranked">[] = [
   "bronze",
   "silver",
   "gold",

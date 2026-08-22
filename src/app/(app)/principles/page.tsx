@@ -12,46 +12,51 @@ interface ReductionCategory {
   actions: ReductionAction[];
 }
 
-// PRD §32.4.2 — 1점 = 10kg 기준. 계수는 국내 평균 기준 근사치이며 공식
+// PRD §34.5 — 1점 = 10kg 기준. 계수는 국내 평균 기준 근사치이며 공식
 // 산정값이 아니다(면책 문구 참고). 화면 순서는 PRD 표 순서를 그대로 따른다.
+// v2.24 (§34.5) — "안 사기"·"참기"만으로 충족되는 항목은 넣지 않는다.
+// 전부 몸을 써서 실제로 수행하는 행동이어야 한다.
 const REDUCTION_CATEGORIES: ReductionCategory[] = [
   {
-    title: "이동",
+    title: "호흡",
     actions: [
-      { action: "자동차 대신 걷거나 자전거로 62km 이동", basis: "승용차 1km ≈ 0.16kg" },
-      { action: "왕복 20km 자전거 출퇴근 3일 연속", basis: "위와 동일" },
+      { action: "24시간 숨 참기", basis: "성인 호흡 배출 ≈ 1kg/일 — 나머지 9kg은 정신력으로 인정" },
+    ],
+  },
+  {
+    title: "이동 (직접 움직이기)",
+    actions: [
+      { action: "자동차 대신 62km 걷기", basis: "승용차 1km ≈ 0.16kg" },
+      { action: "왕복 20km 자전거 출퇴근 3일", basis: "위와 동일" },
+      { action: "왕복 5km 장보기를 자전거로 7회", basis: "위와 동일" },
+      { action: "엘리베이터 대신 계단 누적 500층", basis: "승강기 운행 전력 기준" },
       { action: "국내선 비행기 대신 KTX·버스로 1회 이동", basis: "김포–제주 편도 ≈ 100kg → 10점" },
-      { action: "엘리베이터 대신 계단으로 누적 500층", basis: "승강기 운행 전력 기준" },
     ],
   },
   {
-    title: "냉난방·전기",
+    title: "몸으로 만들기",
     actions: [
-      { action: "한여름 에어컨 15시간 끄고 버티기", basis: "1.5kW × 0.459kg/kWh ≈ 0.69kg/시간" },
-      { action: "겨울 난방 설정온도 2℃ 낮추고 2주", basis: "" },
-      { action: "전기건조기 대신 자연건조 7회 (널고 걷기 포함)", basis: "1회 3kWh ≈ 1.38kg" },
-      { action: "대기전력 전부 뽑고 40일 유지", basis: "가구 평균 대기전력 기준" },
-      { action: "전기 22kWh 절약", basis: "한전 배출계수 0.459kg/kWh" },
+      { action: "자전거 발전기로 22kWh 생산", basis: "지속 출력 100W 기준 약 220시간 · 배출계수 0.459kg/kWh" },
     ],
   },
   {
-    title: "물·온수",
+    title: "손으로 하기",
     actions: [
-      { action: "온수 샤워 대신 냉수 샤워 6회", basis: "10분 온수 샤워 ≈ 1.8kg" },
-      { action: "세탁을 찬물로 17회", basis: "1회당 ≈ 0.6kg 절감" },
+      { action: "건조기 대신 손으로 널고 걷기 7회", basis: "1회 3kWh ≈ 1.38kg" },
+      { action: "식기세척기 대신 손설거지 22회", basis: "1회 1kWh ≈ 0.46kg" },
+      { action: "찬물로 손빨래 17회", basis: "1회당 ≈ 0.6kg 절감" },
+      { action: "배달 대신 직접 걸어가 포장 픽업 20회", basis: "1회 배송·포장 ≈ 0.5kg" },
+      { action: "청바지 1벌 직접 수선해 되살리기", basis: "신품 생산 ≈ 29kg → 약 3점" },
     ],
   },
   {
-    title: "식사·소비",
+    title: "물",
     actions: [
-      { action: "소고기 1인분(200g)을 채식으로 대체", basis: "소고기 1kg ≈ 60kg → 1.2점" },
-      { action: "배달 음식 20회 참고 직접 조리·설거지", basis: "1회 포장·배송 ≈ 0.5kg" },
-      { action: "새 티셔츠 2벌 안 사기", basis: "1벌 생산 ≈ 6kg" },
-      { action: "새 청바지 안 사고 수선해서 입기", basis: "1벌 생산 ≈ 29kg → 약 3점" },
+      { action: "온수 대신 냉수 샤워 6회", basis: "10분 온수 샤워 ≈ 1.8kg" },
     ],
   },
   {
-    title: "흡수 (장기)",
+    title: "장기",
     actions: [
       { action: "나무 1그루 심고 1년 6개월 관리", basis: "30년생 소나무 연간 흡수 ≈ 6.6kg" },
     ],
@@ -91,9 +96,6 @@ export default function PrinciplesPage() {
         <p className="text-sm text-content mt-3">
           보유량이 마이너스면 아래 감축 행동을 실제로 수행하고 인증해
           배출권을 확보해야 합니다.
-        </p>
-        <p className="text-sm font-medium text-content mt-3">
-          1점을 갚으려면 62km를 걸어야 합니다. 하루에 안 됩니다.
         </p>
       </Card>
 

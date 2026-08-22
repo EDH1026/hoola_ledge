@@ -132,8 +132,8 @@ export default async function SettlementsPage({
         <h1 className="text-2xl font-bold text-content">배출권 이전</h1>
         <p className="text-sm text-content-muted mt-1">
           그동안 쌓인 배출권 이전 관계를 최소 이전 횟수로 간소화해서 보여줍니다.
-          감축 행동을 인증했다면 아래에서 이전 완료 처리를, 그냥 누군가에게
-          점수를 주고 싶다면 기부로 기록해주세요. 감축 행동 목록은{" "}
+          감축 행동을 인증했다면 아래에서 이전 완료 처리를, 누군가의 부담을
+          덜어주고 싶다면 면죄부로 기록해주세요. 감축 행동 목록은{" "}
           <Link href="/principles" className="underline">
             운영원칙
           </Link>
@@ -182,7 +182,7 @@ export default async function SettlementsPage({
           </ul>
         )}
         <p className="text-xs text-content-muted mt-3">
-          양수(+)는 받을 배출권, 음수(-)는 넘겨야 할 배출권입니다. 게임·이전·기부·
+          양수(+)는 받을 배출권, 음수(-)는 넘겨야 할 배출권입니다. 게임·이전·면죄부·
           <Link href="/adjustments" className="underline">
             이월 기록
           </Link>
@@ -216,15 +216,15 @@ export default async function SettlementsPage({
             </div>
           }
         >
-          기부 랭킹
+          면죄부 랭킹
         </SectionTitle>
         <div className="grid gap-4 sm:grid-cols-2 mt-4">
           <div>
             <h3 className="text-xs font-medium text-content-muted mb-2">
-              가장 많이 기부한 사람
+              가장 많이 죄를 사하여 주신 분
             </h3>
             {topGivers.length === 0 ? (
-              <EmptyState title="기부 기록이 없습니다." />
+              <EmptyState title="발행된 면죄부가 없습니다." />
             ) : (
               <ul className="space-y-1.5 tabular-nums">
                 {topGivers.map((g, i) => (
@@ -241,10 +241,10 @@ export default async function SettlementsPage({
           </div>
           <div>
             <h3 className="text-xs font-medium text-content-muted mb-2">
-              가장 많이 받은 사람
+              가장 많이 면죄부를 받으신 분
             </h3>
             {topReceivers.length === 0 ? (
-              <EmptyState title="기부 기록이 없습니다." />
+              <EmptyState title="발행된 면죄부가 없습니다." />
             ) : (
               <ul className="space-y-1.5 tabular-nums">
                 {topReceivers.map((r, i) => (

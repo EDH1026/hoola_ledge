@@ -114,19 +114,19 @@ export default function SettlementsClient({
       </Card>
 
       <Card>
-        <SectionTitle description="계산된 배출권 이전 관계와 무관하게, 누구든 원하는 상대에게 원하는 수량을 자유롭게 기부로 기록할 수 있습니다. 기부하는 사람의 보유량은 그만큼 줄고, 받는 사람의 보유량은 그만큼 늡니다.">
-          기부 기록
+        <SectionTitle description="계산된 배출권 이전 관계와 무관하게, 누구든 원하는 상대의 배출권 부담을 원하는 수량만큼 면죄부로 덜어줄 수 있습니다. 면죄부를 발행하면 발행한 사람의 보유량이 그만큼 줄고, 받는 사람의 보유량이 그만큼 늡니다.">
+          면죄부 발행
         </SectionTitle>
         <div className="mt-4">
           <FreeformSettlementForm
             participants={participants}
             onRecorded={handleRecorded}
             type="donation"
-            fromLabel="주는 사람"
-            toLabel="받는 사람"
-            recordingLabel="기부"
-            notePlaceholder="예: 그냥 기분이라서"
-            mismatchError="주는 사람과 받는 사람이 같을 수 없습니다."
+            fromLabel="사면하는 사람"
+            toLabel="사면받는 사람"
+            recordingLabel="면죄부"
+            notePlaceholder="예: 딱해 보여서"
+            mismatchError="사면하는 사람과 사면받는 사람이 같을 수 없습니다."
           />
         </div>
       </Card>
