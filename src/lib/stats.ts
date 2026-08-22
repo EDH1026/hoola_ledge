@@ -725,7 +725,16 @@ export function computeStyleMap(
 // the frame adapt to how much real spread is actually present, and the
 // σ_null floor stops a small, lucky-looking sample from reading as "tight
 // spread" when it's really just "not enough games yet" (PRD §36.2.3).
-const STYLE_MAP_DOMAIN_K = 3;
+//
+// K=2, not 3 (v2.25 후속 조정): the σ_null floor and K multiply together, so
+// whenever that floor wins, the domain edge sits at exactly K×σ. The tick
+// marks and reference lines only go out to ±2σ (§36.2.4 — ±2σ already reads
+// as "the" theoretical min/max), so K=3 left a labeled-tick-free margin
+// between the last ±2σ mark and the actual axis edge. K=2 makes the axis
+// edge coincide with the last tick whenever σ_null is the limiting term —
+// no unlabeled dead space. When robustSD (real spread) wins instead, the
+// frame still simply scales down proportionally (2/3 of what K=3 gave).
+const STYLE_MAP_DOMAIN_K = 2;
 const STYLE_MAP_X_CENTER = 1.0;
 const STYLE_MAP_Y_CENTER = 0;
 export const STYLE_MAP_X_HALF_MIN = 0.15;

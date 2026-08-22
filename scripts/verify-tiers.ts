@@ -569,8 +569,8 @@ function stylePoint(engagement: number, performance: number, engSd: number, perf
     stylePoint(1.0, 0, 0.1, 0.5),
   ];
   const domain = computeStyleMapDomain(points);
-  assert(close(domain.xHalfWidth, 0.3, 1e-9), `case18a: half-width should fall to 3*mean(engSd)=0.3, got ${domain.xHalfWidth}`);
-  assert(close(domain.yHalfWidth, 1.5, 1e-9), `case18a: half-width should fall to 3*mean(perfSd)=1.5, got ${domain.yHalfWidth}`);
+  assert(close(domain.xHalfWidth, 0.2, 1e-9), `case18a: half-width should fall to K(=2)*mean(engSd)=0.2, got ${domain.xHalfWidth}`);
+  assert(close(domain.yHalfWidth, 1.0, 1e-9), `case18a: half-width should fall to K(=2)*mean(perfSd)=1.0, got ${domain.yHalfWidth}`);
 }
 {
   // 18b: one extreme outlier (engagement=5.0) among 6 centered points must
