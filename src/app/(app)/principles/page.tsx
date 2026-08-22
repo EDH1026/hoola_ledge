@@ -5,6 +5,7 @@ import { SectionTitle } from "@/components/ui/SectionTitle";
 interface ReductionAction {
   action: string;
   basis: string;
+  url?: string;
 }
 
 interface ReductionCategory {
@@ -20,7 +21,7 @@ const REDUCTION_CATEGORIES: ReductionCategory[] = [
   {
     title: "호흡",
     actions: [
-      { action: "24시간 숨 참기", basis: "성인 호흡 배출 ≈ 1kg/일 — 나머지 9kg은 정신력으로 인정" },
+      { action: "10일간 숨 참기", basis: "성인 호흡 배출 ≈ 1kg/일 → 10일 기준 10kg" },
     ],
   },
   {
@@ -30,7 +31,13 @@ const REDUCTION_CATEGORIES: ReductionCategory[] = [
       { action: "왕복 20km 자전거 출퇴근 3일", basis: "위와 동일" },
       { action: "왕복 5km 장보기를 자전거로 7회", basis: "위와 동일" },
       { action: "엘리베이터 대신 계단 누적 500층", basis: "승강기 운행 전력 기준" },
-      { action: "국내선 비행기 대신 KTX·버스로 1회 이동", basis: "김포–제주 편도 ≈ 100kg → 10점" },
+    ],
+  },
+  {
+    title: "대중교통 이용",
+    actions: [
+      { action: "자동차 대신 지하철로 80km 이동", basis: "승용차 1km ≈ 0.16kg, 지하철 1km ≈ 0.035kg → 절감 0.125kg/km" },
+      { action: "자동차 대신 버스로 125km 이동", basis: "승용차 1km ≈ 0.16kg, 버스 1km ≈ 0.08kg → 절감 0.08kg/km" },
     ],
   },
   {
@@ -43,10 +50,8 @@ const REDUCTION_CATEGORIES: ReductionCategory[] = [
     title: "손으로 하기",
     actions: [
       { action: "건조기 대신 손으로 널고 걷기 7회", basis: "세탁기 1회분(약 5kg) 건조 기준, 회당 3kWh ≈ 1.38kg" },
-      { action: "식기세척기 대신 손설거지 22회", basis: "한 끼 분량 기준, 회당 1kWh ≈ 0.46kg" },
       { action: "찬물로 손빨래 17회", basis: "세탁기 1회분(약 5kg) 세탁물 기준, 회당 ≈ 0.6kg 절감" },
       { action: "배달 대신 직접 걸어가 포장 픽업 20회", basis: "1회 배송·포장 ≈ 0.5kg" },
-      { action: "청바지 1벌 직접 수선해 되살리기", basis: "신품 생산 ≈ 29kg → 약 3점" },
     ],
   },
   {
@@ -60,8 +65,9 @@ const REDUCTION_CATEGORIES: ReductionCategory[] = [
     title: "장기",
     actions: [
       {
-        action: "서울마이트리(seoulmytree.forest.or.kr)에서 나무 10그루 후원하기",
+        action: "서울마이트리에서 나무 10그루 후원하기",
         basis: "그루당 30년생 소나무 연간 흡수 추정 ≈ 6.6kg 참고 (정확한 산정은 사이트 확인)",
+        url: "https://seoulmytree.forest.or.kr",
       },
     ],
   },
@@ -117,7 +123,20 @@ export default function PrinciplesPage() {
                     key={item.action}
                     className="rounded-lg bg-surface-raised px-3 py-2"
                   >
-                    <p className="text-sm text-content">{item.action}</p>
+                    <p className="text-sm text-content">
+                      {item.url ? (
+                        <a
+                          href={item.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline"
+                        >
+                          {item.action}
+                        </a>
+                      ) : (
+                        item.action
+                      )}
+                    </p>
                     {item.basis && (
                       <p className="text-xs text-content-muted mt-0.5">{item.basis}</p>
                     )}
