@@ -42,9 +42,9 @@ const REDUCTION_CATEGORIES: ReductionCategory[] = [
   {
     title: "손으로 하기",
     actions: [
-      { action: "건조기 대신 손으로 널고 걷기 7회", basis: "1회 3kWh ≈ 1.38kg" },
-      { action: "식기세척기 대신 손설거지 22회", basis: "1회 1kWh ≈ 0.46kg" },
-      { action: "찬물로 손빨래 17회", basis: "1회당 ≈ 0.6kg 절감" },
+      { action: "건조기 대신 손으로 널고 걷기 7회", basis: "세탁기 1회분(약 5kg) 건조 기준, 회당 3kWh ≈ 1.38kg" },
+      { action: "식기세척기 대신 손설거지 22회", basis: "한 끼 분량 기준, 회당 1kWh ≈ 0.46kg" },
+      { action: "찬물로 손빨래 17회", basis: "세탁기 1회분(약 5kg) 세탁물 기준, 회당 ≈ 0.6kg 절감" },
       { action: "배달 대신 직접 걸어가 포장 픽업 20회", basis: "1회 배송·포장 ≈ 0.5kg" },
       { action: "청바지 1벌 직접 수선해 되살리기", basis: "신품 생산 ≈ 29kg → 약 3점" },
     ],
@@ -53,12 +53,16 @@ const REDUCTION_CATEGORIES: ReductionCategory[] = [
     title: "물",
     actions: [
       { action: "온수 대신 냉수 샤워 6회", basis: "10분 온수 샤워 ≈ 1.8kg" },
+      { action: "자동세차 대신 손세차 7회", basis: "자동세차 1회 대비 손세차 절감 ≈ 1.5kg (온수 가열·건조 전력 기준)" },
     ],
   },
   {
     title: "장기",
     actions: [
-      { action: "나무 1그루 심고 1년 6개월 관리", basis: "30년생 소나무 연간 흡수 ≈ 6.6kg" },
+      {
+        action: "서울마이트리(seoulmytree.forest.or.kr)에서 나무 10그루 후원하기",
+        basis: "그루당 30년생 소나무 연간 흡수 추정 ≈ 6.6kg 참고 (정확한 산정은 사이트 확인)",
+      },
     ],
   },
 ];

@@ -14,7 +14,7 @@ const pretendard = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "배출권 장부",
+  title: "탄소배출저감활동 기록부",
   description: "게임 결과에 따른 탄소배출권 이전을 기록·관리하는 앱",
 };
 
