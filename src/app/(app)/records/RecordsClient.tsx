@@ -27,11 +27,13 @@ import { buildParticipantColorMap, PARTICIPANT_COLOR_FALLBACK } from "@/lib/part
 import {
   computeQuarterlyTiers,
   computeStyleMap,
+  computeStyleMapDomain,
   computeRecords,
   computeHighestBalanceRecord,
   GameTypeFilter,
   RecordTier,
   RecordTierEntry,
+  StyleMapDomain,
   StyleMapPoint,
   Tier,
   TierRow,
@@ -88,17 +90,45 @@ const TIER_RANGE_ROWS: { tier: Tier; range: string }[] = [
   }),
 ];
 
-// PRD §16.8 — fixed so a single low-sample outlier can't compress everyone
-// else toward the center by auto-scaling. Bounds come from the same
-// simulation as the tier constants (90-day p1~p99: ENG 0.52~1.56, PERF
-// -1.42~+1.29) with headroom, so don't tune these without re-running it.
-const STYLE_MAP_X_DOMAIN: [number, number] = [0.2, 1.8];
-const STYLE_MAP_X_TICKS = [0.2, 0.6, 1.0, 1.4, 1.8];
-const STYLE_MAP_Y_DOMAIN: [number, number] = [-1.6, 1.6];
-const STYLE_MAP_Y_TICKS = [-1.6, -0.8, 0, 0.8, 1.6];
+// v2.25 (PRD §36.2) — the domain used to be a fixed [0.2,1.8]/[-1.6,1.6] pair
+// (§16.8's "no auto-scaling" guard). It's now derived per-render from the
+// currently-displayed points via computeStyleMapDomain (src/lib/stats.ts),
+// which keeps that guard (robust-SD scaling + a clamp whose upper bound is
+// this old fixed half-width, so the frame can never end up wider than
+// before) while letting it narrow as samples accumulate — see that
+// function's doc comment for the full rationale.
+const STYLE_MAP_X_CENTER = 1.0;
+const STYLE_MAP_Y_CENTER = 0;
 
 function clamp(v: number, [min, max]: [number, number]): number {
   return Math.min(max, Math.max(min, v));
+}
+
+/** Tick positions at the center and every ±kσ (k=1..3) that still falls inside the domain — the axis "explains itself" instead of using arbitrary round numbers. */
+function sigmaTicks(center: number, sigma: number, halfWidth: number): number[] {
+  const ticks = new Set<number>([center]);
+  if (sigma > 0) {
+    for (let k = 1; k <= 3; k++) {
+      const lo = center - k * sigma;
+      const hi = center + k * sigma;
+      if (Math.abs(lo - center) <= halfWidth + 1e-9) ticks.add(lo);
+      if (Math.abs(hi - center) <= halfWidth + 1e-9) ticks.add(hi);
+    }
+  }
+  return Array.from(ticks).sort((a, b) => a - b);
+}
+
+/** ±1σ/±2σ reference-line positions that fall inside the domain (PRD §36.2.4). */
+function sigmaLineValues(center: number, sigma: number, halfWidth: number): number[] {
+  if (sigma <= 0) return [];
+  const out: number[] = [];
+  for (const k of [1, 2]) {
+    const lo = center - k * sigma;
+    const hi = center + k * sigma;
+    if (Math.abs(lo - center) <= halfWidth) out.push(lo);
+    if (Math.abs(hi - center) <= halfWidth) out.push(hi);
+  }
+  return out;
 }
 
 interface StyleMapPlotPoint extends StyleMapPoint {
@@ -194,11 +224,20 @@ export default function RecordsClient({
     return map;
   }, [participants, games]);
 
-  const styleMapPoints: StyleMapPlotPoint[] = (
-    styleMapByGameType.get(styleMapGameType) ?? []
-  ).map((p) => {
-    const x = clamp(p.engagement, STYLE_MAP_X_DOMAIN);
-    const y = clamp(p.performance, STYLE_MAP_Y_DOMAIN);
+  // v2.25 (§36.2.3) — domain derives from the points currently on screen, so
+  // it must be recomputed whenever the game-type tab (hence the points)
+  // changes, not just when the underlying games/participants change.
+  const rawStyleMapPoints: StyleMapPoint[] = useMemo(
+    () => styleMapByGameType.get(styleMapGameType) ?? [],
+    [styleMapByGameType, styleMapGameType]
+  );
+  const styleMapDomain: StyleMapDomain = useMemo(
+    () => computeStyleMapDomain(rawStyleMapPoints),
+    [rawStyleMapPoints]
+  );
+  const styleMapPoints: StyleMapPlotPoint[] = rawStyleMapPoints.map((p) => {
+    const x = clamp(p.engagement, styleMapDomain.xDomain);
+    const y = clamp(p.performance, styleMapDomain.yDomain);
     return { ...p, x, y, clamped: x !== p.engagement || y !== p.performance };
   });
 
@@ -336,7 +375,7 @@ export default function RecordsClient({
             }
           />
         ) : (
-          <StyleMapChart points={styleMapPoints} colorMap={participantColorMap} />
+          <StyleMapChart points={styleMapPoints} colorMap={participantColorMap} domain={styleMapDomain} />
         )}
 
         <p className="text-xs text-content-muted mt-4">
@@ -345,6 +384,10 @@ export default function RecordsClient({
           영향(0 = 기준선. 위쪽일수록 배출권을 확보하고, 아래쪽일수록 계속
           넘깁니다). 판수가 적을수록 점이 크게 튈 수 있어 작고 흐리게
           표시됩니다.
+          <br />
+          점선은 실력·성향 차이가 전혀 없어도 순전히 운으로 생길 수 있는
+          흔들림의 크기입니다(±1σ, ±2σ). 그 안쪽이면 성향 차이라고 보기
+          어렵습니다.
         </p>
       </Card>
 
@@ -517,7 +560,11 @@ function StyleMapTooltip({
 }
 
 /**
- * PRD §16.8 fixed-domain scatter — X=적극성(ENG), Y=환경 영향(PERF), never auto-scales.
+ * PRD §16.8/§36.2 domain-bounded scatter — X=적극성(ENG), Y=환경 영향(PERF).
+ * v2.25부터 도메인은 min/max가 아니라 표시 중인 점들의 robust SD ×
+ * 이론 σ_null로 산출되며(computeStyleMapDomain, src/lib/stats.ts), 클램프
+ * 상한이 예전 고정 도메인과 같아 예전보다 넓어지는 일은 없다 — "한 명의
+ * 극단값에 축 전체가 끌려가지 않는다"는 §16.8의 원래 취지는 그대로다.
  *
  * v2.19 (배치 C, PRD §24.13) 조정:
  *  - 이름 라벨(LabelList)은 점 위에 항상 표시한다. 도메인이 고정이라 값이
@@ -534,11 +581,18 @@ function StyleMapTooltip({
 function StyleMapChart({
   points,
   colorMap,
+  domain,
 }: {
   points: StyleMapPlotPoint[];
   colorMap: Map<string, string>;
+  domain: StyleMapDomain;
 }) {
   const maxGames = points.reduce((max, p) => Math.max(max, p.games), 1);
+  const { xDomain, yDomain, xHalfWidth, yHalfWidth, xSigma, ySigma } = domain;
+  const xTicks = sigmaTicks(STYLE_MAP_X_CENTER, xSigma, xHalfWidth);
+  const yTicks = sigmaTicks(STYLE_MAP_Y_CENTER, ySigma, yHalfWidth);
+  const xSigmaLines = sigmaLineValues(STYLE_MAP_X_CENTER, xSigma, xHalfWidth);
+  const ySigmaLines = sigmaLineValues(STYLE_MAP_Y_CENTER, ySigma, yHalfWidth);
 
   return (
     <div style={{ width: "100%", height: "min(420px, 55vh)" }}>
@@ -548,8 +602,9 @@ function StyleMapChart({
           <XAxis
             type="number"
             dataKey="x"
-            domain={STYLE_MAP_X_DOMAIN}
-            ticks={STYLE_MAP_X_TICKS}
+            domain={xDomain}
+            ticks={xTicks}
+            tickFormatter={(v: number) => v.toFixed(2)}
             allowDataOverflow
             tick={{ fontSize: 12, fill: "#94a3b8" }}
             label={{ value: "적극성 (ENG, 1.00=기준)", position: "insideBottom", offset: -12, fontSize: 12, fill: "#94a3b8" }}
@@ -557,16 +612,25 @@ function StyleMapChart({
           <YAxis
             type="number"
             dataKey="y"
-            domain={STYLE_MAP_Y_DOMAIN}
-            ticks={STYLE_MAP_Y_TICKS}
+            domain={yDomain}
+            ticks={yTicks}
+            tickFormatter={(v: number) => v.toFixed(2)}
             allowDataOverflow
             tick={{ fontSize: 12, fill: "#94a3b8" }}
             label={{ value: "환경 영향 (PERF, 0=기준선)", angle: -90, position: "insideLeft", fontSize: 12, fill: "#94a3b8" }}
           />
-          <ReferenceArea x1={1.0} x2={STYLE_MAP_X_DOMAIN[1]} y1={0} y2={STYLE_MAP_Y_DOMAIN[1]} fill="#059669" fillOpacity={0.13} label={{ value: "탄소 파수꾼", position: "insideTopRight", fontSize: 11, fill: "#cbd5e1" }} />
-          <ReferenceArea x1={1.0} x2={STYLE_MAP_X_DOMAIN[1]} y1={STYLE_MAP_Y_DOMAIN[0]} y2={0} fill="#dc2626" fillOpacity={0.13} label={{ value: "탄소 폭주족", position: "insideBottomRight", fontSize: 11, fill: "#cbd5e1" }} />
-          <ReferenceArea x1={STYLE_MAP_X_DOMAIN[0]} x2={1.0} y1={0} y2={STYLE_MAP_Y_DOMAIN[1]} fill="#059669" fillOpacity={0.13} label={{ value: "저탄소 생활자", position: "insideTopLeft", fontSize: 11, fill: "#cbd5e1" }} />
-          <ReferenceArea x1={STYLE_MAP_X_DOMAIN[0]} x2={1.0} y1={STYLE_MAP_Y_DOMAIN[0]} y2={0} fill="#dc2626" fillOpacity={0.13} label={{ value: "은근한 굴뚝", position: "insideBottomLeft", fontSize: 11, fill: "#cbd5e1" }} />
+          {/* v2.25 (§36.2.4) — 순전히 운으로 생기는 흔들림 크기(±1σ, ±2σ)를
+              데이터·사분면 배경보다 먼저 그려 뒤로 보낸다. */}
+          {xSigmaLines.map((v) => (
+            <ReferenceLine key={`xs-${v}`} x={v} stroke="#64748b" strokeDasharray="2 3" strokeOpacity={0.5} ifOverflow="hidden" />
+          ))}
+          {ySigmaLines.map((v) => (
+            <ReferenceLine key={`ys-${v}`} y={v} stroke="#64748b" strokeDasharray="2 3" strokeOpacity={0.5} ifOverflow="hidden" />
+          ))}
+          <ReferenceArea x1={1.0} x2={xDomain[1]} y1={0} y2={yDomain[1]} fill="#059669" fillOpacity={0.13} label={{ value: "탄소 파수꾼", position: "insideTopRight", fontSize: 11, fill: "#cbd5e1" }} />
+          <ReferenceArea x1={1.0} x2={xDomain[1]} y1={yDomain[0]} y2={0} fill="#dc2626" fillOpacity={0.13} label={{ value: "탄소 폭주족", position: "insideBottomRight", fontSize: 11, fill: "#cbd5e1" }} />
+          <ReferenceArea x1={xDomain[0]} x2={1.0} y1={0} y2={yDomain[1]} fill="#059669" fillOpacity={0.13} label={{ value: "저탄소 생활자", position: "insideTopLeft", fontSize: 11, fill: "#cbd5e1" }} />
+          <ReferenceArea x1={xDomain[0]} x2={1.0} y1={yDomain[0]} y2={0} fill="#dc2626" fillOpacity={0.13} label={{ value: "은근한 굴뚝", position: "insideBottomLeft", fontSize: 11, fill: "#cbd5e1" }} />
           <ReferenceLine x={1.0} stroke="#cbd5e1" />
           <ReferenceLine y={0} stroke="#cbd5e1" />
           <Tooltip content={<StyleMapTooltip />} />

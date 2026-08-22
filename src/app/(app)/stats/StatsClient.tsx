@@ -560,6 +560,7 @@ export default function StatsClient({
                       </span>
                       <span>승률A {(s.winRate * 100).toFixed(0)}%</span>
                       <span>승률B {(s.winRateB * 100).toFixed(0)}%</span>
+                      <span>관여율 {(s.involvementRate * 100).toFixed(0)}%</span>
                     </div>
                     <FilterChip
                       selected={h2hParticipantId === s.id}
@@ -590,6 +591,7 @@ export default function StatsClient({
                     <th className="py-2 pr-4">패</th>
                     <th className="py-2 pr-4">승률A</th>
                     <th className="py-2 pr-4">승률B</th>
+                    <th className="py-2 pr-4">관여율</th>
                     <th className="py-2 pr-4">순증감</th>
                     <th className="py-2 pr-4" />
                   </tr>
@@ -618,6 +620,9 @@ export default function StatsClient({
                           <td className="py-2 pr-4 text-content-muted">
                             {(s.winRateB * 100).toFixed(0)}%
                           </td>
+                          <td className="py-2 pr-4 text-content-muted">
+                            {(s.involvementRate * 100).toFixed(0)}%
+                          </td>
                           <td
                             className={`py-2 pr-4 font-semibold ${
                               s.netPoints > 0
@@ -642,7 +647,7 @@ export default function StatsClient({
                         </tr>
                         {h2hParticipantId === s.id && (
                           <tr className="bg-surface-raised">
-                            <td colSpan={9} className="px-4 pb-3">
+                            <td colSpan={10} className="px-4 pb-3">
                               <HeadToHeadInline
                                 participants={participants}
                                 games={rankGames}
@@ -658,7 +663,9 @@ export default function StatsClient({
             </div>
 
             <p className="text-xs text-content-muted mt-3">
-              승률A = 승 ÷ (승 + 패) · 승률B = 승 ÷ (승 + 무 + 패)
+              승률A = 승 ÷ (승 + 패) · 승률B = 승 ÷ (승 + 무 + 패) · 관여율 = (승 + 패) ÷ (승 + 무 + 패)
+              <br />
+              <span className="opacity-70">승률B = 승률A × 관여율</span>
             </p>
           </>
         )}

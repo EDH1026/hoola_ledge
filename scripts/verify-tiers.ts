@@ -3,8 +3,12 @@
 import {
   computeQuarterlyTiers,
   computeStyleMap,
+  computeStyleMapDomain,
   computeNemesisAndVictim,
+  computeParticipantStats,
   TIER_MIN_WEIGHT,
+  STYLE_MAP_X_HALF_MAX,
+  STYLE_MAP_Y_HALF_MAX,
   TierRow,
   StyleMapPoint,
   ParticipantLike,
@@ -409,6 +413,194 @@ function styleRowFor(points: StyleMapPoint[], id: string): StyleMapPoint | undef
     g.nemesis?.opponentId === "H",
     `case12: both H and I are margin -1, H has more volume (7 vs 3) so should win the tie-break, got ${JSON.stringify(g.nemesis)}`
   );
+}
+
+// Case 13 (v2.25 §36.1): involvementRate and its relationship to winRate/winRateB.
+{
+  const participants: ParticipantLike[] = [
+    { id: "IA", name: "IA", active: true },
+    { id: "IB", name: "IB", active: true },
+  ];
+  const games: GameResult[] = [];
+  let gid = 0;
+  // IA: 3 wins, 1 loss, plus 2 games where IA merely attends (bystander) ->
+  // appearances=6, decisive=4. involvementRate = 4/6.
+  for (let i = 0; i < 3; i++) games.push(game(`iv${gid++}`, "2026-02-01", ["IA", "IB"], "IA", "IB"));
+  games.push(game(`iv${gid++}`, "2026-02-01", ["IA", "IB"], "IB", "IA"));
+  games.push(game(`iv${gid++}`, "2026-02-01", ["IA", "IB", "IC"], "IB", "IC"));
+  games.push(game(`iv${gid++}`, "2026-02-01", ["IA", "IB", "IC"], "IC", "IB"));
+
+  const stats = computeParticipantStats(participants, games);
+  const ia = stats.find((s) => s.id === "IA")!;
+  assert(ia.appearances === 6, `case13: IA should have 6 appearances, got ${ia.appearances}`);
+  assert(close(ia.involvementRate, 4 / 6), `case13: IA involvementRate should be 4/6, got ${ia.involvementRate}`);
+  assert(
+    close(ia.winRateB, ia.winRate * ia.involvementRate),
+    `case13: 승률B should equal 승률A × 관여율, got winRateB=${ia.winRateB} winRate*involvementRate=${ia.winRate * ia.involvementRate}`
+  );
+}
+
+// Style map σ_null tests (PRD §36.2.2/§36.2.5) reuse the same daysAgo helper
+// as cases 8-9 so games land inside the rolling 90-day window.
+
+// Case 14: σ formula. A participant with only 1-point, 5-person games (n=5)
+// over G=100 attended games should get engSd == sqrt((n-2)/(2G)) and
+// perfSd == sqrt(2n/G) exactly (both formulas reduce to the same sum this
+// function actually computes, just algebraically simplified for the
+// all-1-point/fixed-n case — see PRD §36.2.2).
+{
+  const ids = ["SG1", "SG2", "SG3", "SG4", "SG5"];
+  const participants: ParticipantLike[] = ids.map((id) => ({ id, name: id, active: true }));
+  const games: GameResult[] = [];
+  let gid = 0;
+  // 20 rounds of the 5-cycle (5 games/round, everyone attends all 5) ->
+  // 100 attended games per participant, all n=5, points=1 (default).
+  for (let round = 0; round < 20; round++) {
+    for (let i = 0; i < 5; i++) {
+      const winner = ids[i];
+      const loser = ids[(i + 1) % 5];
+      games.push(game(`sig${gid++}`, daysAgo(10), ids, winner, loser));
+    }
+  }
+  const points = computeStyleMap(participants, games, "all");
+  const p = styleRowFor(points, "SG1");
+  if (!p) throw new Error("case14: no StyleMapPoint for SG1");
+  const n = 5;
+  const G = 100;
+  const expectedEngSd = Math.sqrt((n - 2) / (2 * G));
+  const expectedPerfSd = Math.sqrt((2 * n) / G);
+  assert(close(p.engSd, expectedEngSd, 1e-9), `case14: engSd should equal sqrt((n-2)/2G)=${expectedEngSd}, got ${p.engSd}`);
+  assert(close(p.perfSd, expectedPerfSd, 1e-9), `case14: perfSd should equal sqrt(2n/G)=${expectedPerfSd}, got ${p.perfSd}`);
+  // v2.25 값 불변 확인: 새 σ 계산이 engagement/performance 자체를 바꾸지
+  // 않는다 — 기대치대로인 라운드로빈 구성이므로 여전히 1.00/0이어야 한다.
+  assert(close(p.engagement, 1.0), `case14: engagement must be unaffected by the σ addition, got ${p.engagement}`);
+  assert(close(p.performance, 0), `case14: performance must be unaffected by the σ addition, got ${p.performance}`);
+}
+
+// Case 15: 2-person games -> engSd === 0 exactly (a 2-person game always has
+// a decisive winner/loser, so there's no luck-driven spread on the ENG axis).
+{
+  const participants: ParticipantLike[] = [
+    { id: "TW1", name: "TW1", active: true },
+    { id: "TW2", name: "TW2", active: true },
+  ];
+  const games: GameResult[] = [];
+  for (let i = 0; i < 10; i++) {
+    games.push(game(`tw${i}`, daysAgo(5), ["TW1", "TW2"], i % 2 === 0 ? "TW1" : "TW2", i % 2 === 0 ? "TW2" : "TW1"));
+  }
+  const points = computeStyleMap(participants, games, "all");
+  const p = styleRowFor(points, "TW1");
+  if (!p) throw new Error("case15: no StyleMapPoint for TW1");
+  assert(p.engSd === 0, `case15: a participant with only 2-person games must have engSd exactly 0, got ${p.engSd}`);
+}
+
+// Case 16: point weighting increases σ — mixing in a higher-point game
+// should raise both engSd and perfSd relative to an all-1-point baseline
+// with the same game count.
+{
+  const baseParticipants: ParticipantLike[] = [
+    { id: "PW1", name: "PW1", active: true },
+    { id: "PW2", name: "PW2", active: true },
+    { id: "PW3", name: "PW3", active: true },
+    { id: "PW4", name: "PW4", active: true },
+    { id: "PW5", name: "PW5", active: true },
+  ];
+  const table = ["PW1", "PW2", "PW3", "PW4", "PW5"];
+  const baselineGames: GameResult[] = [];
+  for (let i = 0; i < 10; i++) {
+    baselineGames.push(game(`pwb${i}`, daysAgo(5), table, table[i % 5], table[(i + 1) % 5]));
+  }
+  const weightedGames = baselineGames.map((g, i) => (i === 0 ? { ...g, points: 2 } : g));
+
+  const baselinePoints = computeStyleMap(baseParticipants, baselineGames, "all");
+  const weightedPoints = computeStyleMap(baseParticipants, weightedGames, "all");
+  const base = styleRowFor(baselinePoints, "PW1");
+  const weighted = styleRowFor(weightedPoints, "PW1");
+  if (!base || !weighted) throw new Error("case16: missing StyleMapPoint for PW1");
+  assert(
+    weighted.engSd > base.engSd,
+    `case16: mixing in a 2-point game should raise engSd above the all-1-point baseline, got base=${base.engSd} weighted=${weighted.engSd}`
+  );
+  assert(
+    weighted.perfSd > base.perfSd,
+    `case16: mixing in a 2-point game should raise perfSd above the all-1-point baseline, got base=${base.perfSd} weighted=${weighted.perfSd}`
+  );
+}
+
+// Case 17 (v2.25 regression guard): computeQuarterlyTiers' output must be
+// exactly unaffected by the style-map σ work, since it never touches
+// QuarterAccumulator (a separate local map inside computeStyleMap holds the
+// new variance sums). Locks in hand-derived TR/winIndex/lossIndex/perf for a
+// deterministic scenario: P attends 8 4-person games (e=0.25 each), winning
+// 6 and losing 2 -> E_w=2.0, E_p=2.0, winIndex=3.0, lossIndex=1.0, perf=2.0,
+// confidence=2/(2+TIER_E0=8)=0.2, TR=1000+500*2.0*0.2=1200 -> "master".
+{
+  const participants: ParticipantLike[] = [
+    { id: "RG1", name: "RG1", active: true },
+    { id: "RG2", name: "RG2", active: true },
+    { id: "RG3", name: "RG3", active: true },
+    { id: "RG4", name: "RG4", active: true },
+  ];
+  const table = ["RG1", "RG2", "RG3", "RG4"];
+  const games: GameResult[] = [];
+  for (let i = 0; i < 6; i++) games.push(game(`rg-w${i}`, "2026-02-01", table, "RG1", "RG2"));
+  for (let i = 0; i < 2; i++) games.push(game(`rg-l${i}`, "2026-02-02", table, "RG2", "RG1"));
+
+  const rows = computeQuarterlyTiers(participants, games, "all").get("2026-Q1") ?? [];
+  const rg1 = rowFor(rows, "RG1");
+  assert(close(rg1.winIndex, 3.0, 1e-9), `case17: winIndex should be exactly 3.0, got ${rg1.winIndex}`);
+  assert(close(rg1.lossIndex, 1.0, 1e-9), `case17: lossIndex should be exactly 1.0, got ${rg1.lossIndex}`);
+  assert(close(rg1.perf, 2.0, 1e-9), `case17: perf should be exactly 2.0, got ${rg1.perf}`);
+  assert(close(rg1.tr, 1200, 1e-9), `case17: TR should be exactly 1200, got ${rg1.tr}`);
+  assert(rg1.tier === "master", `case17: TR 1200 should land in "master", got ${rg1.tier}`);
+}
+
+// Case 18 (v2.25 §36.2.3): computeStyleMapDomain, tested as a pure function
+// directly on synthetic StyleMapPoint[] — no game data needed.
+function stylePoint(engagement: number, performance: number, engSd: number, perfSd: number): StyleMapPoint {
+  return { id: "x", name: "x", engagement, performance, winIndex: 0, lossIndex: 0, games: 1, engSd, perfSd };
+}
+{
+  // 18a: all points exactly at center -> robustSD is 0, so half-width falls
+  // to k * mean(σ_null).
+  const points = [
+    stylePoint(1.0, 0, 0.1, 0.5),
+    stylePoint(1.0, 0, 0.1, 0.5),
+    stylePoint(1.0, 0, 0.1, 0.5),
+  ];
+  const domain = computeStyleMapDomain(points);
+  assert(close(domain.xHalfWidth, 0.3, 1e-9), `case18a: half-width should fall to 3*mean(engSd)=0.3, got ${domain.xHalfWidth}`);
+  assert(close(domain.yHalfWidth, 1.5, 1e-9), `case18a: half-width should fall to 3*mean(perfSd)=1.5, got ${domain.yHalfWidth}`);
+}
+{
+  // 18b: one extreme outlier (engagement=5.0) among 6 centered points must
+  // not drag the half-width toward it — robust (median-based) SD, unlike a
+  // min/max-based one, is barely moved by a single outlier.
+  const points = [
+    ...Array.from({ length: 6 }, () => stylePoint(1.0, 0, 0.05, 0.05)),
+    stylePoint(5.0, 0, 0.05, 0.05),
+  ];
+  const domain = computeStyleMapDomain(points);
+  assert(
+    close(domain.xHalfWidth, 0.15, 1e-9),
+    `case18b: half-width must not be dragged by the single outlier (should stay at the σ_null floor 0.15), got ${domain.xHalfWidth}`
+  );
+}
+{
+  // 18c: half-width must never exceed the absolute clamp, however spread out
+  // the points are.
+  const points = [
+    stylePoint(1, 0, 0.05, 0.05),
+    stylePoint(3, 4, 0.05, 0.05),
+    stylePoint(5, -8, 0.05, 0.05),
+    stylePoint(7, 12, 0.05, 0.05),
+    stylePoint(9, -16, 0.05, 0.05),
+  ];
+  const domain = computeStyleMapDomain(points);
+  assert(domain.xHalfWidth <= STYLE_MAP_X_HALF_MAX, `case18c: xHalfWidth must never exceed the clamp ${STYLE_MAP_X_HALF_MAX}, got ${domain.xHalfWidth}`);
+  assert(domain.yHalfWidth <= STYLE_MAP_Y_HALF_MAX, `case18c: yHalfWidth must never exceed the clamp ${STYLE_MAP_Y_HALF_MAX}, got ${domain.yHalfWidth}`);
+  assert(close(domain.xHalfWidth, STYLE_MAP_X_HALF_MAX, 1e-9), `case18c: this scenario's spread should hit the clamp exactly, got ${domain.xHalfWidth}`);
+  assert(close(domain.yHalfWidth, STYLE_MAP_Y_HALF_MAX, 1e-9), `case18c: this scenario's spread should hit the clamp exactly, got ${domain.yHalfWidth}`);
 }
 
 console.log("Done.");

@@ -28,6 +28,7 @@ export interface ParticipantStat {
   appearances: number; // times listed as attendee (includes wins/losses/others)
   winRate: number; // 승률A: wins / (wins + losses), 0 if no decisive games
   winRateB: number; // 승률B: wins / appearances, 0 if no appearances
+  involvementRate: number; // 관여율: (wins + losses) / appearances, 0 if no appearances
   netPoints: number; // sum of points won minus points lost (uses each game's `points`, default 1)
 }
 
@@ -47,6 +48,7 @@ export function computeParticipantStats(
       appearances: 0,
       winRate: 0,
       winRateB: 0,
+      involvementRate: 0,
       netPoints: 0,
     });
   }
@@ -63,6 +65,7 @@ export function computeParticipantStats(
         appearances: 0,
         winRate: 0,
         winRateB: 0,
+        involvementRate: 0,
         netPoints: 0,
       };
       stats.set(id, s);
@@ -85,6 +88,7 @@ export function computeParticipantStats(
     const decisive = s.wins + s.losses;
     s.winRate = decisive > 0 ? s.wins / decisive : 0; // 승률A
     s.winRateB = s.appearances > 0 ? s.wins / s.appearances : 0; // 승률B
+    s.involvementRate = s.appearances > 0 ? decisive / s.appearances : 0; // 관여율: (wins + losses) / appearances
   }
 
   return Array.from(stats.values()).sort((a, b) => b.netPoints - a.netPoints);
@@ -615,6 +619,23 @@ export interface StyleMapPoint {
   winIndex: number;
   lossIndex: number;
   games: number; // 최근 90일 참여 판수 (점 크기/투명도에 사용)
+  /** 실력·성향 차이가 없을 때 순전히 운으로 생기는 ENG의 표준편차 (PRD §36.2.2) */
+  engSd: number;
+  /** 같은 기준의 PERF 표준편차 */
+  perfSd: number;
+}
+
+// v2.25 (§36.2.5) — variance accumulator for the σ_null calculation, kept
+// entirely local to computeStyleMap and separate from QuarterAccumulator
+// (which computeQuarterlyTiers also uses) so the tier numbers are
+// structurally guaranteed to be unaffected by this addition.
+interface VarianceAccumulator {
+  engVar: number; // Σ p² · 2e(1 − 2e)
+  perfVar: number; // Σ p² · 2e
+}
+
+function emptyVarianceAccumulator(): VarianceAccumulator {
+  return { engVar: 0, perfVar: 0 };
 }
 
 /**
@@ -645,6 +666,15 @@ export function computeStyleMap(
     }
     return a;
   };
+  const varAcc = new Map<string, VarianceAccumulator>();
+  const ensureVar = (id: string): VarianceAccumulator => {
+    let v = varAcc.get(id);
+    if (!v) {
+      v = emptyVarianceAccumulator();
+      varAcc.set(id, v);
+    }
+    return v;
+  };
   for (const g of scoped) {
     const n = g.attendeeIds.length;
     if (n === 0) continue;
@@ -654,6 +684,9 @@ export function computeStyleMap(
       const a = ensure(attendeeId);
       a.expectedPoints += points * e;
       a.gameCount += 1;
+      const v = ensureVar(attendeeId);
+      v.engVar += points * points * 2 * e * Math.max(0, 1 - 2 * e);
+      v.perfVar += points * points * 2 * e;
     }
     ensure(g.winnerId).wonPoints += points;
     ensure(g.loserId).lostPoints += points;
@@ -665,6 +698,9 @@ export function computeStyleMap(
     if (!a || a.gameCount === 0) continue;
     const winIndex = a.expectedPoints > 0 ? a.wonPoints / a.expectedPoints : 0;
     const lossIndex = a.expectedPoints > 0 ? a.lostPoints / a.expectedPoints : 0;
+    const v = varAcc.get(p.id) ?? emptyVarianceAccumulator();
+    const engSd = a.expectedPoints > 0 ? Math.sqrt(v.engVar) / (2 * a.expectedPoints) : 0;
+    const perfSd = a.expectedPoints > 0 ? Math.sqrt(v.perfVar) / a.expectedPoints : 0;
     points.push({
       id: p.id,
       name: p.name,
@@ -673,10 +709,88 @@ export function computeStyleMap(
       winIndex,
       lossIndex,
       games: a.gameCount,
+      engSd,
+      perfSd,
     });
   }
 
   return points;
+}
+
+// ---------- v2.25: style map domain (PRD §36.2.3) ----------
+//
+// §16.8 banned auto-scaling from min/max because one outlier could swing the
+// whole frame. Scaling off a median-based robust SD instead of min/max keeps
+// that guarantee (one or two outliers barely move a median) while letting
+// the frame adapt to how much real spread is actually present, and the
+// σ_null floor stops a small, lucky-looking sample from reading as "tight
+// spread" when it's really just "not enough games yet" (PRD §36.2.3).
+const STYLE_MAP_DOMAIN_K = 3;
+const STYLE_MAP_X_CENTER = 1.0;
+const STYLE_MAP_Y_CENTER = 0;
+export const STYLE_MAP_X_HALF_MIN = 0.15;
+export const STYLE_MAP_X_HALF_MAX = 0.8;
+export const STYLE_MAP_Y_HALF_MIN = 0.4;
+export const STYLE_MAP_Y_HALF_MAX = 1.6;
+
+export interface StyleMapDomain {
+  xDomain: [number, number];
+  yDomain: [number, number];
+  xHalfWidth: number;
+  yHalfWidth: number;
+  xSigma: number; // mean engSd over the displayed points — used for the ±1σ/±2σ reference lines
+  ySigma: number; // mean perfSd over the displayed points
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function mean(values: number[]): number {
+  return values.length === 0 ? 0 : values.reduce((sum, v) => sum + v, 0) / values.length;
+}
+
+/** 1.4826 * median(|value - center|) — a normal-consistent robust SD estimate, barely moved by one or two outliers (unlike min/max). */
+function robustSD(values: number[], center: number): number {
+  return 1.4826 * median(values.map((v) => Math.abs(v - center)));
+}
+
+/**
+ * Pure function (no chart/React dependency) so it's directly unit-testable —
+ * see scripts/verify-tiers.ts. Given the currently-displayed style map
+ * points, derives symmetric axis domains per PRD §36.2.3: half-width =
+ * k * max(robustSD(values), mean(theoretical σ_null)), clamped to
+ * [STYLE_MAP_*_HALF_MIN, STYLE_MAP_*_HALF_MAX]. The clamp's upper bound is
+ * exactly the old fixed-domain half-width, so this can never produce a wider
+ * frame than before — only an equal or narrower one.
+ */
+export function computeStyleMapDomain(points: StyleMapPoint[]): StyleMapDomain {
+  const xSigma = mean(points.map((p) => p.engSd));
+  const ySigma = mean(points.map((p) => p.perfSd));
+
+  const xHalfRaw = STYLE_MAP_DOMAIN_K * Math.max(
+    robustSD(points.map((p) => p.engagement), STYLE_MAP_X_CENTER),
+    xSigma
+  );
+  const yHalfRaw = STYLE_MAP_DOMAIN_K * Math.max(
+    robustSD(points.map((p) => p.performance), STYLE_MAP_Y_CENTER),
+    ySigma
+  );
+
+  const xHalfWidth = Math.min(STYLE_MAP_X_HALF_MAX, Math.max(STYLE_MAP_X_HALF_MIN, xHalfRaw));
+  const yHalfWidth = Math.min(STYLE_MAP_Y_HALF_MAX, Math.max(STYLE_MAP_Y_HALF_MIN, yHalfRaw));
+
+  return {
+    xDomain: [STYLE_MAP_X_CENTER - xHalfWidth, STYLE_MAP_X_CENTER + xHalfWidth],
+    yDomain: [STYLE_MAP_Y_CENTER - yHalfWidth, STYLE_MAP_Y_CENTER + yHalfWidth],
+    xHalfWidth,
+    yHalfWidth,
+    xSigma,
+    ySigma,
+  };
 }
 
 // ---------- v2.10: head-to-head matrix, nemesis/victim, per-game-type ----------
