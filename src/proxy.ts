@@ -11,7 +11,7 @@ const ADMIN_ROUTES = ["/participants", "/adjustments", "/rollback"];
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  if (pathname.startsWith("/login") || pathname === "/favicon.ico") {
+  if (pathname.startsWith("/login") || pathname === "/favicon.ico" || pathname === "/icon.png") {
     return NextResponse.next();
   }
 
@@ -46,5 +46,5 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.png).*)"],
 };
