@@ -35,7 +35,7 @@ const SETTLEMENT_TYPE_STYLES: Record<WritableSettlementType, string> = {
 };
 
 const SETTLEMENT_TYPE_LABELS: Record<WritableSettlementType, string> = {
-  payment: "배출권 정산",
+  payment: "감축의무 이행",
   donation: "면죄부",
 };
 

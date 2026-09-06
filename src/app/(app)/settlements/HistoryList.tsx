@@ -33,7 +33,7 @@ export type HistoryFilterValue = "all" | "payment" | "donation" | "adjustment";
 
 const FILTER_OPTIONS: { value: HistoryFilterValue; label: string }[] = [
   { value: "all", label: "전체" },
-  { value: "payment", label: "배출권 정산" },
+  { value: "payment", label: "감축의무 이행" },
   { value: "donation", label: "면죄부" },
   { value: "adjustment", label: "이월 기록" },
 ];

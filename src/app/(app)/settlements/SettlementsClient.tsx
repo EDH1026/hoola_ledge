@@ -94,10 +94,11 @@ export default function SettlementsClient({
             저장되어 이력에는 같은 라벨로 뜬다. 예전엔 이 섹션 제목이
             "변제"였는데, 방금 이 폼으로 기록한 사람이 아래 이력에서
             다른 이름표를 보게 되는 어긋남이 있었다. 제목을 이력의
-            표기와 맞춘다. v2.23 — 라벨이 "배출권 이전"으로 바뀌었고,
-            v2.26에서 다시 "배출권 정산"으로 바뀌었다 (PRD §32.2, §38.5). */}
-        <SectionTitle description="위 카드에 제안된 조합과 다르게 실제로 넘겼을 때(예: 다른 사람이 대신 넘겨줬을 때) 자유롭게 기록하는 배출권 정산입니다. 계산 방식은 완전히 같습니다 — 굳이 누구 대신인지를 남기지 않아도, 다음에 이 화면을 열면 정리된 이전 계획이 알아서 새로 계산되어 반영됩니다.">
-          배출권 정산 (직접 입력)
+            표기와 맞춘다. v2.23 — 라벨이 "배출권 이전"으로, v2.26에서
+            "배출권 정산"으로, v2.27에서 다시 "감축의무 이행"으로
+            바뀌었다 (PRD §32.2, §38.2). */}
+        <SectionTitle description="위 카드에 제안된 조합과 다르게 실제로 넘겼을 때(예: 다른 사람이 대신 넘겨줬을 때) 자유롭게 기록하는 감축의무 이행입니다. 계산 방식은 완전히 같습니다 — 굳이 누구 대신인지를 남기지 않아도, 다음에 이 화면을 열면 정리된 이전 계획이 알아서 새로 계산되어 반영됩니다.">
+          감축의무 이행 (직접 입력)
         </SectionTitle>
         <div className="mt-4">
           <FreeformSettlementForm
@@ -106,7 +107,7 @@ export default function SettlementsClient({
             type="payment"
             fromLabel="넘긴 사람"
             toLabel="받은 사람"
-            recordingLabel="배출권 정산"
+            recordingLabel="감축의무 이행"
             notePlaceholder="예: 창민이 대신 넘겨줌"
             mismatchError="넘긴 사람과 받은 사람이 같을 수 없습니다."
           />
@@ -114,7 +115,7 @@ export default function SettlementsClient({
       </Card>
 
       <Card>
-        <SectionTitle description="계산된 배출권 정산 관계와 무관하게, 누구든 원하는 상대의 배출권 부담을 원하는 수량만큼 면죄부로 덜어줄 수 있습니다. 면죄부를 발행하면 발행한 사람의 보유량이 그만큼 줄고, 받는 사람의 보유량이 그만큼 늡니다.">
+        <SectionTitle description="계산된 감축의무 이행 관계와 무관하게, 누구든 원하는 상대의 배출권 부담을 원하는 수량만큼 면죄부로 덜어줄 수 있습니다. 면죄부를 발행하면 발행한 사람의 보유량이 그만큼 줄고, 받는 사람의 보유량이 그만큼 늡니다.">
           면죄부 발행
         </SectionTitle>
         <div className="mt-4">
@@ -193,7 +194,7 @@ function TransactionCard({
         });
         onRecorded({
           id,
-          summary: `${fromName} → ${toName} ${amount}점 (배출권 정산)`,
+          summary: `${fromName} → ${toName} ${amount}점 (감축의무 이행)`,
           createdAt,
         });
         setStep("idle");
@@ -258,7 +259,7 @@ function TransactionCard({
           <p className="text-sm text-content tabular-nums">
             <span className="font-semibold">{fromName}</span>가{" "}
             <span className="font-semibold">{toName}</span>에게{" "}
-            <span className="font-semibold">{amount}점</span>을 배출권 정산으로
+            <span className="font-semibold">{amount}점</span>을 감축의무 이행으로
             기록합니다.
           </p>
           {isLarge && (
