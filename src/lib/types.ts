@@ -5,15 +5,23 @@ export interface Participant {
   createdAt: string;
 }
 
-export type GameType = "hoola" | "citadels" | "6nimmt";
+export type GameType = "hoola" | "citadels" | "6nimmt" | "loveletter" | "skullking";
 
 export const GAME_TYPE_LABELS: Record<GameType, string> = {
   hoola: "훌라",
   citadels: "시타델",
   "6nimmt": "젝스님트",
+  loveletter: "러브레터",
+  skullking: "스컬킹",
 };
 
-export const GAME_TYPES: GameType[] = ["hoola", "citadels", "6nimmt"];
+export const GAME_TYPES: GameType[] = [
+  "hoola",
+  "citadels",
+  "6nimmt",
+  "loveletter",
+  "skullking",
+];
 
 export interface GameResult {
   id: string;

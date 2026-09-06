@@ -23,7 +23,11 @@ create table participants (
   created_at timestamptz not null default now()
 );
 
-create type game_type as enum ('hoola', 'citadels', '6nimmt');
+-- v2.26 added 'loveletter'/'skullking' (PRD §38) — kept here so a *fresh*
+-- install matches production, but this line alone does NOT update an
+-- existing database (create type fails if the type already exists). Run
+-- supabase/2026-09-06_add_loveletter_skullking.sql against the live DB instead.
+create type game_type as enum ('hoola', 'citadels', '6nimmt', 'loveletter', 'skullking');
 
 create table games (
   id uuid primary key default gen_random_uuid(),

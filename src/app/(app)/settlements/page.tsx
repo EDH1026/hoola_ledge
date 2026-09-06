@@ -129,9 +129,9 @@ export default async function SettlementsPage({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-content">배출권 이전</h1>
+        <h1 className="text-2xl font-bold text-content">배출권 정산</h1>
         <p className="text-sm text-content-muted mt-1">
-          그동안 쌓인 배출권 이전 관계를 최소 이전 횟수로 간소화해서 보여줍니다.
+          그동안 쌓인 배출권 정산 관계를 최소 이전 횟수로 간소화해서 보여줍니다.
           감축 행동을 인증했다면 아래에서 이전 완료 처리를, 누군가의 부담을
           덜어주고 싶다면 면죄부로 기록해주세요. 감축 행동 목록은{" "}
           <Link href="/principles" className="underline">

@@ -866,7 +866,8 @@ function GameEditForm({
     <div className="rounded-xl border border-slate-700 bg-surface-raised p-4 space-y-4">
       <div>
         <span className="text-xs text-content-muted block mb-1.5">종목</span>
-        <div className="grid grid-cols-3 gap-2">
+        {/* v2.26 — 종목 3종 -> 5종. NewGameForm과 동일하게 grid-cols-2 기본. */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {GAME_TYPES.map((gt) => {
             const selected = gameType === gt;
             return (

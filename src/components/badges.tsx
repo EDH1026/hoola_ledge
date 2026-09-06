@@ -11,6 +11,8 @@ const GAME_TYPE_STYLES: Record<GameType, string> = {
   hoola: "bg-indigo-500/10 text-indigo-300 border-indigo-800",
   citadels: "bg-purple-500/10 text-purple-300 border-purple-800",
   "6nimmt": "bg-orange-500/10 text-orange-300 border-orange-800",
+  loveletter: "bg-rose-500/10 text-rose-300 border-rose-800",
+  skullking: "bg-cyan-500/10 text-cyan-300 border-cyan-800",
 };
 
 export function GameTypeBadge({ gameType }: { gameType?: GameType }) {
@@ -33,7 +35,7 @@ const SETTLEMENT_TYPE_STYLES: Record<WritableSettlementType, string> = {
 };
 
 const SETTLEMENT_TYPE_LABELS: Record<WritableSettlementType, string> = {
-  payment: "배출권 이전",
+  payment: "배출권 정산",
   donation: "면죄부",
 };
 

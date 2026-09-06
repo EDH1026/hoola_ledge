@@ -35,7 +35,7 @@ export default async function AdjustmentsPage() {
         </div>
         <h1 className="text-2xl font-bold text-content">이월 기록</h1>
         <p className="text-sm text-content-muted mt-1">
-          이 앱을 쓰기 전부터 있던 배출권 이전 관계를 게임 기록 없이 반영합니다.
+          이 앱을 쓰기 전부터 있던 배출권 정산 관계를 게임 기록 없이 반영합니다.
           승패 개념이 없고, 누가 누구에게 얼마를 넘겨야 하는지만 기록합니다.
           통계(승/패/참석)에는 영향을 주지 않으며, 보유량 계산에는 반영됩니다.
         </p>

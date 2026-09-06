@@ -250,7 +250,9 @@ export default function NewGameForm({
     <div className="space-y-6">
       <Card>
         <SectionTitle>1. 종목 선택</SectionTitle>
-        <div className="grid grid-cols-3 gap-2 mt-3">
+        {/* v2.26 — 종목이 3종 -> 5종으로 늘어나 grid-cols-3(3+2 잔여 행)
+            대신 grid-cols-2를 기본으로 쓴다(390px에서 셀 폭 여유 확보). */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-3">
           {GAME_TYPES.map((gt) => {
             const selected = gameType === gt;
             return (
