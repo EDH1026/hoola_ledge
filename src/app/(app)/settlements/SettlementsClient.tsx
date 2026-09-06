@@ -105,11 +105,11 @@ export default function SettlementsClient({
             participants={participants}
             onRecorded={handleRecorded}
             type="payment"
-            fromLabel="넘긴 사람"
-            toLabel="받은 사람"
+            fromLabel="이행자"
+            toLabel="감독자"
             recordingLabel="감축의무 이행"
             notePlaceholder="예: 창민이 대신 넘겨줌"
-            mismatchError="넘긴 사람과 받은 사람이 같을 수 없습니다."
+            mismatchError="이행자와 감독자가 같을 수 없습니다."
           />
         </div>
       </Card>
