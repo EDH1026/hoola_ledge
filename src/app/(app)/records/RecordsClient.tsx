@@ -93,12 +93,15 @@ const TIER_RANGE_ROWS: { tier: Tier; range: string }[] = [
 // v2.25 (PRD §36.2) — the domain used to be a fixed [0.2,1.8]/[-1.6,1.6] pair
 // (§16.8's "no auto-scaling" guard). It's now derived per-render from the
 // currently-displayed points via computeStyleMapDomain (src/lib/stats.ts),
-// which keeps that guard (robust-SD scaling + a clamp whose upper bound is
-// this old fixed half-width, so the frame can never end up wider than
-// before) while letting it narrow as samples accumulate — see that
-// function's doc comment for the full rationale.
+// which keeps that guard (robust-SD scaling + a shared clamp — see that
+// function's doc comment) while letting it narrow as samples accumulate.
+//
+// v2.27 (§39.3) — both axes are now ATK/DEF, each centered at 1.00 (WI and
+// 2-LI share the same "1.00 = expected" reference point), so both centers
+// are the same number now — kept as two constants (not one) since the X/Y
+// distinction still matters for readability at every call site below.
 const STYLE_MAP_X_CENTER = 1.0;
-const STYLE_MAP_Y_CENTER = 0;
+const STYLE_MAP_Y_CENTER = 1.0;
 
 function clamp(v: number, [min, max]: [number, number]): number {
   return Math.min(max, Math.max(min, v));
@@ -139,8 +142,8 @@ function sigmaLineValues(center: number, sigma: number, halfWidth: number): numb
 }
 
 interface StyleMapPlotPoint extends StyleMapPoint {
-  x: number; // clamped engagement, for plotting
-  y: number; // clamped performance, for plotting
+  x: number; // clamped attack, for plotting
+  y: number; // clamped defense, for plotting
   clamped: boolean; // true if the raw point fell outside the fixed domain
 }
 
@@ -243,9 +246,9 @@ export default function RecordsClient({
     [rawStyleMapPoints]
   );
   const styleMapPoints: StyleMapPlotPoint[] = rawStyleMapPoints.map((p) => {
-    const x = clamp(p.engagement, styleMapDomain.xDomain);
-    const y = clamp(p.performance, styleMapDomain.yDomain);
-    return { ...p, x, y, clamped: x !== p.engagement || y !== p.performance };
+    const x = clamp(p.attack, styleMapDomain.xDomain);
+    const y = clamp(p.defense, styleMapDomain.yDomain);
+    return { ...p, x, y, clamped: x !== p.attack || y !== p.defense };
   });
 
   // v2.19 (배치 C, PRD §24.13) — 참가자별 고정 색. 예전엔 손익 부호로만
@@ -386,11 +389,10 @@ export default function RecordsClient({
         )}
 
         <p className="text-xs text-content-muted mt-4">
-          가로 = 적극성(1.00 = 기대치. 오른쪽일수록 Win 아니면 Lose로 끝나는
-          판이 많고, 왼쪽일수록 무로 지나가는 판이 많습니다) / 세로 = 환경
-          영향(0 = 기준선. 위쪽일수록 배출권을 확보하고, 아래쪽일수록 계속
-          넘깁니다). 판수가 적을수록 점이 크게 튈 수 있어 작고 흐리게
-          표시됩니다.
+          가로 = 공격력(승 지수 그대로. 1.00 = 기대치, 오른쪽일수록 기대보다
+          많이 이깁니다) / 세로 = 방어력(패 지수를 뒤집은 값. 1.00 = 기대치,
+          위쪽일수록 기대보다 적게 집니다). 판수가 적을수록 점이 크게 튈 수
+          있어 작고 흐리게 표시됩니다.
           <br />
           점선은 실력·성향 차이가 전혀 없어도 순전히 운으로 생길 수 있는
           흔들림의 크기입니다(±1σ, ±2σ). 그 안쪽이면 성향 차이라고 보기
@@ -557,8 +559,8 @@ function StyleMapTooltip({
   return (
     <div className="bg-surface border border-line rounded-lg shadow-sm px-3 py-2 text-xs space-y-0.5 tabular-nums">
       <p className="font-semibold text-content">{p.name}</p>
-      <p className="text-content-muted">적극성 {p.engagement.toFixed(2)}</p>
-      <p className="text-content-muted">환경 영향 {p.performance >= 0 ? "+" : ""}{p.performance.toFixed(2)}</p>
+      <p className="text-content-muted">공격력 {p.attack.toFixed(2)}</p>
+      <p className="text-content-muted">방어력 {p.defense.toFixed(2)}</p>
       <p className="text-content-muted">승 지수 {p.winIndex.toFixed(2)} · 패 지수 {p.lossIndex.toFixed(2)}</p>
       <p className="text-content-muted">최근 90일 {p.games}판</p>
       {p.clamped && <p className="text-amber-400">* 실제 값은 표시 범위를 벗어남</p>}
@@ -567,11 +569,13 @@ function StyleMapTooltip({
 }
 
 /**
- * PRD §16.8/§36.2 domain-bounded scatter — X=적극성(ENG), Y=환경 영향(PERF).
- * v2.25부터 도메인은 min/max가 아니라 표시 중인 점들의 robust SD ×
- * 이론 σ_null로 산출되며(computeStyleMapDomain, src/lib/stats.ts), 클램프
- * 상한이 예전 고정 도메인과 같아 예전보다 넓어지는 일은 없다 — "한 명의
- * 극단값에 축 전체가 끌려가지 않는다"는 §16.8의 원래 취지는 그대로다.
+ * PRD §16.8/§36.2/§39 domain-bounded scatter — X=공격력(ATK=승 지수),
+ * Y=방어력(DEF=2−패 지수). v2.25부터 도메인은 min/max가 아니라 표시 중인
+ * 점들의 robust SD × 이론 σ_null로 산출되며(computeStyleMapDomain,
+ * src/lib/stats.ts) "한 명의 극단값에 축 전체가 끌려가지 않는다"는 §16.8의
+ * 원래 취지를 유지한다. v2.27(§39)에서 축 정의가 ENG/PERF에서 ATK/DEF로
+ * 바뀌었고, 두 축의 σ_null이 이론상 같은 값이라 클램프 상하한도 공유한다
+ * (STYLE_MAP_HALF_MIN/MAX, src/lib/stats.ts).
  *
  * v2.19 (배치 C, PRD §24.13) 조정:
  *  - 이름 라벨(LabelList)은 점 위에 항상 표시한다. 도메인이 고정이라 값이
@@ -614,7 +618,7 @@ function StyleMapChart({
             tickFormatter={(v: number) => v.toFixed(2)}
             allowDataOverflow
             tick={{ fontSize: 12, fill: "#94a3b8" }}
-            label={{ value: "적극성 (ENG, 1.00=기준)", position: "insideBottom", offset: -12, fontSize: 12, fill: "#94a3b8" }}
+            label={{ value: "공격력 (ATK=승 지수, 1.00=기준)", position: "insideBottom", offset: -12, fontSize: 12, fill: "#94a3b8" }}
           />
           <YAxis
             type="number"
@@ -624,7 +628,7 @@ function StyleMapChart({
             tickFormatter={(v: number) => v.toFixed(2)}
             allowDataOverflow
             tick={{ fontSize: 12, fill: "#94a3b8" }}
-            label={{ value: "환경 영향 (PERF, 0=기준선)", angle: -90, position: "insideLeft", fontSize: 12, fill: "#94a3b8" }}
+            label={{ value: "방어력 (DEF=2−패 지수, 1.00=기준)", angle: -90, position: "insideLeft", fontSize: 12, fill: "#94a3b8" }}
           />
           {/* v2.25 (§36.2.4) — 순전히 운으로 생기는 흔들림 크기(±1σ, ±2σ)를
               데이터·사분면 배경보다 먼저 그려 뒤로 보낸다. */}
@@ -634,12 +638,16 @@ function StyleMapChart({
           {ySigmaLines.map((v) => (
             <ReferenceLine key={`ys-${v}`} y={v} stroke="#64748b" strokeDasharray="2 3" strokeOpacity={0.5} ifOverflow="hidden" />
           ))}
-          <ReferenceArea x1={1.0} x2={xDomain[1]} y1={0} y2={yDomain[1]} fill="#059669" fillOpacity={0.13} label={{ value: "탄소 파수꾼", position: "insideTopRight", fontSize: 11, fill: "#cbd5e1" }} />
-          <ReferenceArea x1={1.0} x2={xDomain[1]} y1={yDomain[0]} y2={0} fill="#dc2626" fillOpacity={0.13} label={{ value: "탄소 폭주족", position: "insideBottomRight", fontSize: 11, fill: "#cbd5e1" }} />
-          <ReferenceArea x1={xDomain[0]} x2={1.0} y1={0} y2={yDomain[1]} fill="#059669" fillOpacity={0.13} label={{ value: "저탄소 생활자", position: "insideTopLeft", fontSize: 11, fill: "#cbd5e1" }} />
-          <ReferenceArea x1={xDomain[0]} x2={1.0} y1={yDomain[0]} y2={0} fill="#dc2626" fillOpacity={0.13} label={{ value: "은근한 굴뚝", position: "insideBottomLeft", fontSize: 11, fill: "#cbd5e1" }} />
+          {/* v2.27 (§39.4) — 사분면 이름을 RPG 스탯 아키타입으로 재명명.
+              공격·방어 모두 높은/낮은 대각선(먼치킨/미니언)만 초록/빨강으로
+              강조하고, 한쪽만 높은 두 사분면(광전사/탱커)은 "좋다/나쁘다"가
+              아니라 트레이드오프이므로 중립적인 호박색으로 표시한다. */}
+          <ReferenceArea x1={1.0} x2={xDomain[1]} y1={1.0} y2={yDomain[1]} fill="#059669" fillOpacity={0.13} label={{ value: "먼치킨", position: "insideTopRight", fontSize: 11, fill: "#cbd5e1" }} />
+          <ReferenceArea x1={1.0} x2={xDomain[1]} y1={yDomain[0]} y2={1.0} fill="#d97706" fillOpacity={0.13} label={{ value: "광전사", position: "insideBottomRight", fontSize: 11, fill: "#cbd5e1" }} />
+          <ReferenceArea x1={xDomain[0]} x2={1.0} y1={1.0} y2={yDomain[1]} fill="#d97706" fillOpacity={0.13} label={{ value: "탱커", position: "insideTopLeft", fontSize: 11, fill: "#cbd5e1" }} />
+          <ReferenceArea x1={xDomain[0]} x2={1.0} y1={yDomain[0]} y2={1.0} fill="#dc2626" fillOpacity={0.13} label={{ value: "미니언", position: "insideBottomLeft", fontSize: 11, fill: "#cbd5e1" }} />
           <ReferenceLine x={1.0} stroke="#cbd5e1" />
-          <ReferenceLine y={0} stroke="#cbd5e1" />
+          <ReferenceLine y={1.0} stroke="#cbd5e1" />
           <Tooltip content={<StyleMapTooltip />} />
           <Scatter
             data={points}

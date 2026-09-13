@@ -603,51 +603,65 @@ export function computeQuarterlyTiers(
   return result;
 }
 
-// ---------- v2.15: style map (PRD §16.8) — rolling 90-day 2-axis scatter ----------
+// ---------- v2.15: style map (PRD §16.8, axes redefined v2.27 §39) — rolling
+// 90-day 2-axis scatter ----------
 //
 // A completely separate representation from the tier system above: no
 // shrinkage, no carryover, no sample-size gate, and a rolling 90-day window
 // instead of calendar quarters. Individual "play style" badges were
 // considered (and briefly built) but the PRD settled on expressing style
 // only through this scatter plot, not a per-person tag.
+//
+// v2.27 (§39.2) replaced the original ENG/PERF axes (an average and a
+// difference of win/loss index) with the two indices shown directly:
+// attack = winIndex, defense = 2 - lossIndex (an inversion so "higher =
+// better defense", mirroring winIndex's own "higher = better attack" scale
+// — see §39.2 for why the raw lossIndex can't be used as-is here).
 
 export interface StyleMapPoint {
   id: string;
   name: string;
-  engagement: number; // ENG = (WI + LI) / 2, 1.00 = 기대치
-  performance: number; // PERF = WI - LI, 0 = 본전
+  attack: number; // ATK = WI (승 지수 그대로), 1.00 = 기대치
+  defense: number; // DEF = 2 - LI (패 지수의 반전), 1.00 = 기대치, 높을수록 적게 짐
   winIndex: number;
   lossIndex: number;
   games: number; // 최근 90일 참여 판수 (점 크기/투명도에 사용)
-  /** 실력·성향 차이가 없을 때 순전히 운으로 생기는 ENG의 표준편차 (PRD §36.2.2) */
-  engSd: number;
-  /** 같은 기준의 PERF 표준편차 */
-  perfSd: number;
+  /** 실력·성향 차이가 없을 때 순전히 운으로 생기는 ATK의 표준편차 (PRD §39.2) */
+  atkSd: number;
+  /** DEF의 표준편차 — ATK와 대칭인 통계 구조라 이론상 atkSd와 정확히 같다 */
+  defSd: number;
 }
 
 // v2.25 (§36.2.5) — variance accumulator for the σ_null calculation, kept
 // entirely local to computeStyleMap and separate from QuarterAccumulator
 // (which computeQuarterlyTiers also uses) so the tier numbers are
 // structurally guaranteed to be unaffected by this addition.
+//
+// v2.27 (§39.2): winIndex and lossIndex are each marginally Bernoulli(e_g)
+// per game, so Var(winIndex) and Var(lossIndex) are the SAME sum — one
+// accumulator now serves both axes instead of the old separate engVar/
+// perfVar (which combined WI and LI together and so needed their
+// covariance too; ATK and DEF each depend on only one of the two).
 interface VarianceAccumulator {
-  engVar: number; // Σ p² · 2e(1 − 2e)
-  perfVar: number; // Σ p² · 2e
+  wlVar: number; // Σ p² · e(1 − e) — shared by both winIndex and lossIndex
 }
 
 function emptyVarianceAccumulator(): VarianceAccumulator {
-  return { engVar: 0, perfVar: 0 };
+  return { wlVar: 0 };
 }
 
 /**
  * Raw (unshrunk, ungated) win/loss index over the trailing 90 days, per PRD
  * §16.8. Participants with zero games in the window are excluded entirely —
- * a 0-game point plotted at (1.00, 0) would read as a false "doing fine"
+ * a 0-game point plotted at (1.00, 1.00) would read as a false "doing fine"
  * signal rather than "no data".
  *
- * Axis independence: with W = winIndex and L = lossIndex, ENG = (W+L)/2 and
- * PERF = W-L are uncorrelated because Cov(W+L, W-L) = Var(W) - Var(L) = 0
- * whenever E[W] = E[L] (true here: both average to 1/n expected value per
- * game) — so moving along one axis says nothing about position on the other.
+ * Axis correlation (v2.27, §39.2): unlike the old ENG/PERF pair, ATK (=WI)
+ * and DEF (=2-LI) are NOT independent — Cov(WI, 2-LI) = -Cov(WI,LI) =
+ * +Σp²e²/E_p² > 0, i.e. the null (no-skill) cloud is a diagonally tilted
+ * ellipse, slightly favoring the 먼치킨/미니언 diagonal over 광전사/탱커. This
+ * doesn't affect either axis's own marginal σ (used for the ±1σ/±2σ
+ * reference lines below), only the *joint* shape of pure-luck scatter.
  */
 export function computeStyleMap(
   participants: ParticipantLike[],
@@ -685,8 +699,7 @@ export function computeStyleMap(
       a.expectedPoints += points * e;
       a.gameCount += 1;
       const v = ensureVar(attendeeId);
-      v.engVar += points * points * 2 * e * Math.max(0, 1 - 2 * e);
-      v.perfVar += points * points * 2 * e;
+      v.wlVar += points * points * e * (1 - e);
     }
     ensure(g.winnerId).wonPoints += points;
     ensure(g.loserId).lostPoints += points;
@@ -699,25 +712,24 @@ export function computeStyleMap(
     const winIndex = a.expectedPoints > 0 ? a.wonPoints / a.expectedPoints : 0;
     const lossIndex = a.expectedPoints > 0 ? a.lostPoints / a.expectedPoints : 0;
     const v = varAcc.get(p.id) ?? emptyVarianceAccumulator();
-    const engSd = a.expectedPoints > 0 ? Math.sqrt(v.engVar) / (2 * a.expectedPoints) : 0;
-    const perfSd = a.expectedPoints > 0 ? Math.sqrt(v.perfVar) / a.expectedPoints : 0;
+    const wlSd = a.expectedPoints > 0 ? Math.sqrt(v.wlVar) / a.expectedPoints : 0;
     points.push({
       id: p.id,
       name: p.name,
-      engagement: (winIndex + lossIndex) / 2,
-      performance: winIndex - lossIndex,
+      attack: winIndex,
+      defense: 2 - lossIndex,
       winIndex,
       lossIndex,
       games: a.gameCount,
-      engSd,
-      perfSd,
+      atkSd: wlSd,
+      defSd: wlSd,
     });
   }
 
   return points;
 }
 
-// ---------- v2.25: style map domain (PRD §36.2.3) ----------
+// ---------- v2.25: style map domain (PRD §36.2.3), axes redefined v2.27 (§39.3) ----------
 //
 // §16.8 banned auto-scaling from min/max because one outlier could swing the
 // whole frame. Scaling off a median-based robust SD instead of min/max keeps
@@ -734,21 +746,29 @@ export function computeStyleMap(
 // edge coincide with the last tick whenever σ_null is the limiting term —
 // no unlabeled dead space. When robustSD (real spread) wins instead, the
 // frame still simply scales down proportionally (2/3 of what K=3 gave).
+//
+// v2.27 (§39.3): ATK and DEF share the exact same theoretical σ_null (see
+// computeStyleMap's doc comment), so the two clamp pairs collapse into one
+// shared STYLE_MAP_HALF_MIN/MAX. xHalfWidth and yHalfWidth still each derive
+// from their OWN robustSD (real spread can differ between the two axes even
+// when the null-luck floor doesn't) — only the floor term and the clamp
+// bounds are now shared. The old "this can never be wider than the pre-v2.25
+// fixed domain" guarantee doesn't carry over — there's no pre-v2.25 ATK/DEF
+// domain to bound against, since this axis pair is new in v2.27. HALF_MIN/
+// HALF_MAX below are a fresh, from-scratch judgment call (see PRD §39.3).
 const STYLE_MAP_DOMAIN_K = 2;
 const STYLE_MAP_X_CENTER = 1.0;
-const STYLE_MAP_Y_CENTER = 0;
-export const STYLE_MAP_X_HALF_MIN = 0.15;
-export const STYLE_MAP_X_HALF_MAX = 0.8;
-export const STYLE_MAP_Y_HALF_MIN = 0.4;
-export const STYLE_MAP_Y_HALF_MAX = 1.6;
+const STYLE_MAP_Y_CENTER = 1.0;
+export const STYLE_MAP_HALF_MIN = 0.2;
+export const STYLE_MAP_HALF_MAX = 1.0;
 
 export interface StyleMapDomain {
   xDomain: [number, number];
   yDomain: [number, number];
   xHalfWidth: number;
   yHalfWidth: number;
-  xSigma: number; // mean engSd over the displayed points — used for the ±1σ/±2σ reference lines
-  ySigma: number; // mean perfSd over the displayed points
+  xSigma: number; // mean atkSd over the displayed points — used for the ±1σ/±2σ reference lines
+  ySigma: number; // mean defSd over the displayed points
 }
 
 function median(values: number[]): number {
@@ -770,27 +790,26 @@ function robustSD(values: number[], center: number): number {
 /**
  * Pure function (no chart/React dependency) so it's directly unit-testable —
  * see scripts/verify-tiers.ts. Given the currently-displayed style map
- * points, derives symmetric axis domains per PRD §36.2.3: half-width =
+ * points, derives symmetric axis domains per PRD §36.2.3/§39.3: half-width =
  * k * max(robustSD(values), mean(theoretical σ_null)), clamped to
- * [STYLE_MAP_*_HALF_MIN, STYLE_MAP_*_HALF_MAX]. The clamp's upper bound is
- * exactly the old fixed-domain half-width, so this can never produce a wider
- * frame than before — only an equal or narrower one.
+ * [STYLE_MAP_HALF_MIN, STYLE_MAP_HALF_MAX] (shared by both axes since v2.27
+ * — ATK and DEF have the same theoretical σ_null).
  */
 export function computeStyleMapDomain(points: StyleMapPoint[]): StyleMapDomain {
-  const xSigma = mean(points.map((p) => p.engSd));
-  const ySigma = mean(points.map((p) => p.perfSd));
+  const xSigma = mean(points.map((p) => p.atkSd));
+  const ySigma = mean(points.map((p) => p.defSd));
 
   const xHalfRaw = STYLE_MAP_DOMAIN_K * Math.max(
-    robustSD(points.map((p) => p.engagement), STYLE_MAP_X_CENTER),
+    robustSD(points.map((p) => p.attack), STYLE_MAP_X_CENTER),
     xSigma
   );
   const yHalfRaw = STYLE_MAP_DOMAIN_K * Math.max(
-    robustSD(points.map((p) => p.performance), STYLE_MAP_Y_CENTER),
+    robustSD(points.map((p) => p.defense), STYLE_MAP_Y_CENTER),
     ySigma
   );
 
-  const xHalfWidth = Math.min(STYLE_MAP_X_HALF_MAX, Math.max(STYLE_MAP_X_HALF_MIN, xHalfRaw));
-  const yHalfWidth = Math.min(STYLE_MAP_Y_HALF_MAX, Math.max(STYLE_MAP_Y_HALF_MIN, yHalfRaw));
+  const xHalfWidth = Math.min(STYLE_MAP_HALF_MAX, Math.max(STYLE_MAP_HALF_MIN, xHalfRaw));
+  const yHalfWidth = Math.min(STYLE_MAP_HALF_MAX, Math.max(STYLE_MAP_HALF_MIN, yHalfRaw));
 
   return {
     xDomain: [STYLE_MAP_X_CENTER - xHalfWidth, STYLE_MAP_X_CENTER + xHalfWidth],

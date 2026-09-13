@@ -12,7 +12,7 @@ export const GAME_TYPE_LABELS: Record<GameType, string> = {
   citadels: "시타델",
   "6nimmt": "젝스님트",
   loveletter: "러브레터",
-  skullking: "스컬킹",
+  skullking: "마헤", // v2.28 (§40) — 종목 자체는 그대로, 표시 이름만 정정. GameType 키(skullking)와 라벨이 달라지는 건 "6nimmt"/"젝스님트"에서도 이미 그렇다.
 };
 
 export const GAME_TYPES: GameType[] = [

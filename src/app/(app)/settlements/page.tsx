@@ -105,23 +105,20 @@ export default async function SettlementsPage({
     b.createdAt.localeCompare(a.createdAt)
   );
 
-  // Donation ranking: total given / received per participant, from
-  // donation-type settlements only (legacy "waiver" counts as donation too).
+  // Donation ranking: total given per participant, from donation-type
+  // settlements only (legacy "waiver" counts as donation too). v2.28 (§40)
+  // dropped the "가장 많이 받으신 분" half of this ranking — publicly
+  // highlighting who received the most forgiveness read as calling out debt,
+  // which cut against the intent of a forgiveness ranking.
   const donationSettlements = filterByDatePreset(
     db.settlements.filter((s) => normalizeSettlementType(s.type) === "donation"),
     donationRange
   );
   const given = new Map<string, number>();
-  const received = new Map<string, number>();
   for (const s of donationSettlements) {
     given.set(s.fromId, (given.get(s.fromId) ?? 0) + s.amount);
-    received.set(s.toId, (received.get(s.toId) ?? 0) + s.amount);
   }
   const topGivers = Array.from(given.entries())
-    .map(([id, amount]) => ({ id, amount, name: nameOf(id) }))
-    .sort((a, b) => b.amount - a.amount)
-    .slice(0, 5);
-  const topReceivers = Array.from(received.entries())
     .map(([id, amount]) => ({ id, amount, name: nameOf(id) }))
     .sort((a, b) => b.amount - a.amount)
     .slice(0, 5);
@@ -218,47 +215,25 @@ export default async function SettlementsPage({
         >
           면죄부 랭킹
         </SectionTitle>
-        <div className="grid gap-4 sm:grid-cols-2 mt-4">
-          <div>
-            <h3 className="text-xs font-medium text-content-muted mb-2">
-              가장 많이 죄를 사하여 주신 분
-            </h3>
-            {topGivers.length === 0 ? (
-              <EmptyState title="발행된 면죄부가 없습니다." />
-            ) : (
-              <ul className="space-y-1.5 tabular-nums">
-                {topGivers.map((g, i) => (
-                  <li key={g.id} className="flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-2">
-                      <span className="w-4 text-content-faint">{i + 1}</span>
-                      <span className="font-medium text-content">{g.name}</span>
-                    </span>
-                    <span className="font-semibold text-amber-300">{g.amount}점</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <div>
-            <h3 className="text-xs font-medium text-content-muted mb-2">
-              가장 많이 면죄부를 받으신 분
-            </h3>
-            {topReceivers.length === 0 ? (
-              <EmptyState title="발행된 면죄부가 없습니다." />
-            ) : (
-              <ul className="space-y-1.5 tabular-nums">
-                {topReceivers.map((r, i) => (
-                  <li key={r.id} className="flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-2">
-                      <span className="w-4 text-content-faint">{i + 1}</span>
-                      <span className="font-medium text-content">{r.name}</span>
-                    </span>
-                    <span className="font-semibold text-amber-300">{r.amount}점</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+        <div className="mt-4">
+          <h3 className="text-xs font-medium text-content-muted mb-2">
+            가장 많이 죄를 사하여 주신 분
+          </h3>
+          {topGivers.length === 0 ? (
+            <EmptyState title="발행된 면죄부가 없습니다." />
+          ) : (
+            <ul className="space-y-1.5 tabular-nums">
+              {topGivers.map((g, i) => (
+                <li key={g.id} className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 text-content-faint">{i + 1}</span>
+                    <span className="font-medium text-content">{g.name}</span>
+                  </span>
+                  <span className="font-semibold text-amber-300">{g.amount}점</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </Card>
 

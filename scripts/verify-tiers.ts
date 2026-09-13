@@ -7,8 +7,7 @@ import {
   computeNemesisAndVictim,
   computeParticipantStats,
   TIER_MIN_WEIGHT,
-  STYLE_MAP_X_HALF_MAX,
-  STYLE_MAP_Y_HALF_MAX,
+  STYLE_MAP_HALF_MAX,
   TierRow,
   StyleMapPoint,
   ParticipantLike,
@@ -246,11 +245,15 @@ function styleRowFor(points: StyleMapPoint[], id: string): StyleMapPoint | undef
   return points.find((p) => p.id === id);
 }
 
-// Case 8: style map's two axes move independently. Part A: a 5-person cycle
-// (same shape as case1) where everyone hits their expected rate exactly ->
-// engagement ~= 1.00 and performance ~= 0 for all. Part B: two participants
-// both with PERF = 0 (equal win/loss counts) but very different engagement —
-// proving ENG isn't just a rescaled PERF.
+// Case 8 (v2.27 §39.2): style map's two axes are ATK=winIndex and
+// DEF=2-lossIndex directly. Part A: a 5-person cycle (same shape as case1)
+// where everyone hits their expected win/loss rate exactly -> ATK ~= 1.00
+// and DEF ~= 1.00 for all (winIndex=lossIndex=1.00, so 2-1.00=1.00). Part B:
+// two participants who each go exactly 1W/1L-equivalent (so ATK and DEF
+// should each land near 1.00 for both) but with very different game
+// volume/decisiveness, to lock in that winIndex/lossIndex (and hence
+// ATK/DEF) are computed per participant from their own attended games, not
+// shared across the table.
 {
   const ids = ["SA", "SB", "SC", "SD", "SE"];
   const participants: ParticipantLike[] = ids.map((id) => ({ id, name: id, active: true }));
@@ -268,8 +271,8 @@ function styleRowFor(points: StyleMapPoint[], id: string): StyleMapPoint | undef
   for (const id of ids) {
     const p = styleRowFor(points, id);
     if (!p) throw new Error(`no StyleMapPoint for ${id}`);
-    assert(close(p.engagement, 1.0), `case8a: ${id} at exactly expected rate should have engagement=1.00, got ${p.engagement}`);
-    assert(close(p.performance, 0), `case8a: ${id} performance should be 0, got ${p.performance}`);
+    assert(close(p.attack, 1.0), `case8a: ${id} at exactly expected win rate should have attack=1.00, got ${p.attack}`);
+    assert(close(p.defense, 1.0), `case8a: ${id} at exactly expected loss rate should have defense=1.00, got ${p.defense}`);
   }
 }
 {
@@ -300,10 +303,18 @@ function styleRowFor(points: StyleMapPoint[], id: string): StyleMapPoint | undef
   const even2 = styleRowFor(points, "Even2");
   const rare8 = styleRowFor(points, "Rare8");
   if (!even2 || !rare8) throw new Error("case8b: missing StyleMapPoint");
-  assert(close(even2.performance, 0), `case8b: Even2 (2W/2L) should have performance=0, got ${even2.performance}`);
-  assert(close(rare8.performance, 0), `case8b: Rare8 (1W/1L) should have performance=0, got ${rare8.performance}`);
-  assert(even2.engagement > 1.0, `case8b: Even2 (always decisive) should have engagement > 1.00, got ${even2.engagement}`);
-  assert(rare8.engagement < 1.0, `case8b: Rare8 (mostly bystander) should have engagement < 1.00, got ${rare8.engagement}`);
+  // Even2: 4-person table (e=0.25), expectedPoints=1.0, wins 2/loses 2 ->
+  // winIndex=lossIndex=2.0 -> attack=2.0, defense=2-2.0=0.0.
+  assert(close(even2.attack, 2.0), `case8b: Even2 (2W/4 at e=0.25) should have attack=2.0, got ${even2.attack}`);
+  assert(close(even2.defense, 0.0), `case8b: Even2 (2L/4 at e=0.25, lossIndex=2.0) should have defense=0.0, got ${even2.defense}`);
+  // Rare8: expectedPoints=2.0 (8 games at e=0.25), wins 1/loses 1 ->
+  // winIndex=lossIndex=0.5 -> attack=0.5, defense=2-0.5=1.5.
+  assert(close(rare8.attack, 0.5), `case8b: Rare8 (1W/8 at e=0.25) should have attack=0.5, got ${rare8.attack}`);
+  assert(close(rare8.defense, 1.5), `case8b: Rare8 (1L/8 at e=0.25, lossIndex=0.5) should have defense=1.5, got ${rare8.defense}`);
+  assert(even2.attack > 1.0, `case8b: Even2 (always decisive, wins more than expected) should have attack > 1.00, got ${even2.attack}`);
+  assert(even2.defense < 1.0, `case8b: Even2 (loses more than expected too) should have defense < 1.00, got ${even2.defense}`);
+  assert(rare8.attack < 1.0, `case8b: Rare8 (mostly bystander, wins less than expected) should have attack < 1.00, got ${rare8.attack}`);
+  assert(rare8.defense > 1.0, `case8b: Rare8 (loses less than expected too) should have defense > 1.00, got ${rare8.defense}`);
 }
 
 // Case 9: style map's rolling 90-day gate. A game 91 days ago must be
@@ -440,14 +451,15 @@ function styleRowFor(points: StyleMapPoint[], id: string): StyleMapPoint | undef
   );
 }
 
-// Style map σ_null tests (PRD §36.2.2/§36.2.5) reuse the same daysAgo helper
-// as cases 8-9 so games land inside the rolling 90-day window.
+// Style map σ_null tests (PRD §36.2.2/§36.2.5, formulas replaced v2.27 §39.2)
+// reuse the same daysAgo helper as cases 8-9 so games land inside the
+// rolling 90-day window.
 
 // Case 14: σ formula. A participant with only 1-point, 5-person games (n=5)
-// over G=100 attended games should get engSd == sqrt((n-2)/(2G)) and
-// perfSd == sqrt(2n/G) exactly (both formulas reduce to the same sum this
-// function actually computes, just algebraically simplified for the
-// all-1-point/fixed-n case — see PRD §36.2.2).
+// over G=100 attended games should get atkSd == defSd == sqrt((n-1)/G)
+// exactly (see PRD §39.2 for the derivation — Var(winIndex) and
+// Var(lossIndex) are each Σp²e(1-e)/E_p², which the all-1-point/fixed-n case
+// reduces to (n-1)/G).
 {
   const ids = ["SG1", "SG2", "SG3", "SG4", "SG5"];
   const participants: ParticipantLike[] = ids.map((id) => ({ id, name: id, active: true }));
@@ -467,18 +479,21 @@ function styleRowFor(points: StyleMapPoint[], id: string): StyleMapPoint | undef
   if (!p) throw new Error("case14: no StyleMapPoint for SG1");
   const n = 5;
   const G = 100;
-  const expectedEngSd = Math.sqrt((n - 2) / (2 * G));
-  const expectedPerfSd = Math.sqrt((2 * n) / G);
-  assert(close(p.engSd, expectedEngSd, 1e-9), `case14: engSd should equal sqrt((n-2)/2G)=${expectedEngSd}, got ${p.engSd}`);
-  assert(close(p.perfSd, expectedPerfSd, 1e-9), `case14: perfSd should equal sqrt(2n/G)=${expectedPerfSd}, got ${p.perfSd}`);
-  // v2.25 값 불변 확인: 새 σ 계산이 engagement/performance 자체를 바꾸지
-  // 않는다 — 기대치대로인 라운드로빈 구성이므로 여전히 1.00/0이어야 한다.
-  assert(close(p.engagement, 1.0), `case14: engagement must be unaffected by the σ addition, got ${p.engagement}`);
-  assert(close(p.performance, 0), `case14: performance must be unaffected by the σ addition, got ${p.performance}`);
+  const expectedSd = Math.sqrt((n - 1) / G);
+  assert(close(p.atkSd, expectedSd, 1e-9), `case14: atkSd should equal sqrt((n-1)/G)=${expectedSd}, got ${p.atkSd}`);
+  assert(close(p.defSd, expectedSd, 1e-9), `case14: defSd should equal sqrt((n-1)/G)=${expectedSd} (same as atkSd), got ${p.defSd}`);
+  // v2.25/v2.27 값 불변 확인: σ 계산이 attack/defense 자체를 바꾸지 않는다 —
+  // 기대치대로인 라운드로빈 구성이므로 여전히 1.00/1.00이어야 한다.
+  assert(close(p.attack, 1.0), `case14: attack must be unaffected by the σ addition, got ${p.attack}`);
+  assert(close(p.defense, 1.0), `case14: defense must be unaffected by the σ addition, got ${p.defense}`);
 }
 
-// Case 15: 2-person games -> engSd === 0 exactly (a 2-person game always has
-// a decisive winner/loser, so there's no luck-driven spread on the ENG axis).
+// Case 15: 2-person games -> atkSd === 0 exactly (a 2-person game always has
+// a decisive winner/loser at e=0.5, so Var = e(1-e) = 0.25... wait, that's
+// not 0. Only e=1 (n=1, impossible) gives Var=0. What *is* true for 2-person
+// games is n_g=2 -> e=0.5 -> e(1-e)=0.25, a fixed non-zero per-game
+// variance — still a valid, exactly-predictable σ, just not zero. Assert the
+// exact closed form instead of a zero floor.
 {
   const participants: ParticipantLike[] = [
     { id: "TW1", name: "TW1", active: true },
@@ -491,12 +506,15 @@ function styleRowFor(points: StyleMapPoint[], id: string): StyleMapPoint | undef
   const points = computeStyleMap(participants, games, "all");
   const p = styleRowFor(points, "TW1");
   if (!p) throw new Error("case15: no StyleMapPoint for TW1");
-  assert(p.engSd === 0, `case15: a participant with only 2-person games must have engSd exactly 0, got ${p.engSd}`);
+  // n=2, e=0.5, G=10, all points=1: atkSd = sqrt((n-1)/G) = sqrt(1/10).
+  const expectedSd = Math.sqrt(1 / 10);
+  assert(close(p.atkSd, expectedSd, 1e-9), `case15: a 2-person-game-only participant should have atkSd=sqrt((n-1)/G)=${expectedSd}, got ${p.atkSd}`);
 }
 
 // Case 16: point weighting increases σ — mixing in a higher-point game
-// should raise both engSd and perfSd relative to an all-1-point baseline
-// with the same game count.
+// should raise both atkSd and defSd (identically, since they share one
+// underlying sum) relative to an all-1-point baseline with the same game
+// count.
 {
   const baseParticipants: ParticipantLike[] = [
     { id: "PW1", name: "PW1", active: true },
@@ -518,12 +536,12 @@ function styleRowFor(points: StyleMapPoint[], id: string): StyleMapPoint | undef
   const weighted = styleRowFor(weightedPoints, "PW1");
   if (!base || !weighted) throw new Error("case16: missing StyleMapPoint for PW1");
   assert(
-    weighted.engSd > base.engSd,
-    `case16: mixing in a 2-point game should raise engSd above the all-1-point baseline, got base=${base.engSd} weighted=${weighted.engSd}`
+    weighted.atkSd > base.atkSd,
+    `case16: mixing in a 2-point game should raise atkSd above the all-1-point baseline, got base=${base.atkSd} weighted=${weighted.atkSd}`
   );
   assert(
-    weighted.perfSd > base.perfSd,
-    `case16: mixing in a 2-point game should raise perfSd above the all-1-point baseline, got base=${base.perfSd} weighted=${weighted.perfSd}`
+    close(weighted.atkSd, weighted.defSd),
+    `case16: atkSd and defSd must stay identical (same underlying sum), got atkSd=${weighted.atkSd} defSd=${weighted.defSd}`
   );
 }
 
@@ -555,52 +573,59 @@ function styleRowFor(points: StyleMapPoint[], id: string): StyleMapPoint | undef
   assert(rg1.tier === "master", `case17: TR 1200 should land in "master", got ${rg1.tier}`);
 }
 
-// Case 18 (v2.25 §36.2.3): computeStyleMapDomain, tested as a pure function
-// directly on synthetic StyleMapPoint[] — no game data needed.
-function stylePoint(engagement: number, performance: number, engSd: number, perfSd: number): StyleMapPoint {
-  return { id: "x", name: "x", engagement, performance, winIndex: 0, lossIndex: 0, games: 1, engSd, perfSd };
+// Case 18 (v2.25 §36.2.3, clamp shared v2.27 §39.3): computeStyleMapDomain,
+// tested as a pure function directly on synthetic StyleMapPoint[] — no game
+// data needed. Both axes now center on 1.0 and share one clamp pair
+// (STYLE_MAP_HALF_MIN/MAX), but xHalfWidth/yHalfWidth are still each derived
+// from their own robustSD — 18a uses different atkSd/defSd specifically to
+// prove that independence survives the shared-clamp refactor.
+function stylePoint(attack: number, defense: number, atkSd: number, defSd: number): StyleMapPoint {
+  return { id: "x", name: "x", attack, defense, winIndex: 0, lossIndex: 0, games: 1, atkSd, defSd };
 }
 {
   // 18a: all points exactly at center -> robustSD is 0, so half-width falls
-  // to k * mean(σ_null).
+  // to k * mean(σ_null) — independently per axis (atkSd=0.15 -> 0.3, defSd=
+  // 0.3 -> 0.6), neither clamp bound engaged.
   const points = [
-    stylePoint(1.0, 0, 0.1, 0.5),
-    stylePoint(1.0, 0, 0.1, 0.5),
-    stylePoint(1.0, 0, 0.1, 0.5),
+    stylePoint(1.0, 1.0, 0.15, 0.3),
+    stylePoint(1.0, 1.0, 0.15, 0.3),
+    stylePoint(1.0, 1.0, 0.15, 0.3),
   ];
   const domain = computeStyleMapDomain(points);
-  assert(close(domain.xHalfWidth, 0.2, 1e-9), `case18a: half-width should fall to K(=2)*mean(engSd)=0.2, got ${domain.xHalfWidth}`);
-  assert(close(domain.yHalfWidth, 1.0, 1e-9), `case18a: half-width should fall to K(=2)*mean(perfSd)=1.0, got ${domain.yHalfWidth}`);
+  assert(close(domain.xHalfWidth, 0.3, 1e-9), `case18a: half-width should fall to K(=2)*mean(atkSd)=0.3, got ${domain.xHalfWidth}`);
+  assert(close(domain.yHalfWidth, 0.6, 1e-9), `case18a: half-width should fall to K(=2)*mean(defSd)=0.6, got ${domain.yHalfWidth}`);
 }
 {
-  // 18b: one extreme outlier (engagement=5.0) among 6 centered points must
-  // not drag the half-width toward it — robust (median-based) SD, unlike a
-  // min/max-based one, is barely moved by a single outlier.
+  // 18b: one extreme outlier (attack=5.0) among 6 centered points must not
+  // drag the half-width toward it — robust (median-based) SD, unlike a
+  // min/max-based one, is barely moved by a single outlier. σ_null=0.05 here
+  // is below the shared floor (0.2), so the floor wins regardless.
   const points = [
-    ...Array.from({ length: 6 }, () => stylePoint(1.0, 0, 0.05, 0.05)),
-    stylePoint(5.0, 0, 0.05, 0.05),
+    ...Array.from({ length: 6 }, () => stylePoint(1.0, 1.0, 0.05, 0.05)),
+    stylePoint(5.0, 1.0, 0.05, 0.05),
   ];
   const domain = computeStyleMapDomain(points);
   assert(
-    close(domain.xHalfWidth, 0.15, 1e-9),
-    `case18b: half-width must not be dragged by the single outlier (should stay at the σ_null floor 0.15), got ${domain.xHalfWidth}`
+    close(domain.xHalfWidth, 0.2, 1e-9),
+    `case18b: half-width must not be dragged by the single outlier (should stay at the shared σ_null floor 0.2), got ${domain.xHalfWidth}`
   );
 }
 {
   // 18c: half-width must never exceed the absolute clamp, however spread out
-  // the points are.
+  // the points are. Both axes share the same clamp now, so both should hit
+  // the same ceiling.
   const points = [
-    stylePoint(1, 0, 0.05, 0.05),
-    stylePoint(3, 4, 0.05, 0.05),
-    stylePoint(5, -8, 0.05, 0.05),
-    stylePoint(7, 12, 0.05, 0.05),
-    stylePoint(9, -16, 0.05, 0.05),
+    stylePoint(1, 1, 0.05, 0.05),
+    stylePoint(3, 5, 0.05, 0.05),
+    stylePoint(5, -7, 0.05, 0.05),
+    stylePoint(7, 13, 0.05, 0.05),
+    stylePoint(9, -15, 0.05, 0.05),
   ];
   const domain = computeStyleMapDomain(points);
-  assert(domain.xHalfWidth <= STYLE_MAP_X_HALF_MAX, `case18c: xHalfWidth must never exceed the clamp ${STYLE_MAP_X_HALF_MAX}, got ${domain.xHalfWidth}`);
-  assert(domain.yHalfWidth <= STYLE_MAP_Y_HALF_MAX, `case18c: yHalfWidth must never exceed the clamp ${STYLE_MAP_Y_HALF_MAX}, got ${domain.yHalfWidth}`);
-  assert(close(domain.xHalfWidth, STYLE_MAP_X_HALF_MAX, 1e-9), `case18c: this scenario's spread should hit the clamp exactly, got ${domain.xHalfWidth}`);
-  assert(close(domain.yHalfWidth, STYLE_MAP_Y_HALF_MAX, 1e-9), `case18c: this scenario's spread should hit the clamp exactly, got ${domain.yHalfWidth}`);
+  assert(domain.xHalfWidth <= STYLE_MAP_HALF_MAX, `case18c: xHalfWidth must never exceed the clamp ${STYLE_MAP_HALF_MAX}, got ${domain.xHalfWidth}`);
+  assert(domain.yHalfWidth <= STYLE_MAP_HALF_MAX, `case18c: yHalfWidth must never exceed the clamp ${STYLE_MAP_HALF_MAX}, got ${domain.yHalfWidth}`);
+  assert(close(domain.xHalfWidth, STYLE_MAP_HALF_MAX, 1e-9), `case18c: this scenario's spread should hit the clamp exactly, got ${domain.xHalfWidth}`);
+  assert(close(domain.yHalfWidth, STYLE_MAP_HALF_MAX, 1e-9), `case18c: this scenario's spread should hit the clamp exactly, got ${domain.yHalfWidth}`);
 }
 
 console.log("Done.");

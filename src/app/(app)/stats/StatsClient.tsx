@@ -80,7 +80,7 @@ const GAME_TYPE_OPTIONS: { value: GameTypeFilter; label: string }[] = [
   ...GAME_TYPES.map((gt) => ({ value: gt, label: GAME_TYPE_LABELS[gt] })),
 ];
 
-const DEFAULT_RANGE: RangePreset = "30d";
+const DEFAULT_RANGE: RangePreset = "90d";
 const DEFAULT_CUMULATIVE_GROUPING: CumulativeGrouping = "day";
 const DEFAULT_TREND_GROUPING: PeriodGrouping = "week";
 
