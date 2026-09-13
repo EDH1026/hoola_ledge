@@ -103,6 +103,14 @@ const TIER_RANGE_ROWS: { tier: Tier; range: string }[] = [
 const STYLE_MAP_X_CENTER = 1.0;
 const STYLE_MAP_Y_CENTER = 1.0;
 
+// v2.29 (§40) — 줌: 점 하나가 기본 도메인 밖에 찍혀 점선 테두리로만 보일 때
+// ("이 사람 실제 위치가 어딘지 보고 싶다"), 두 축의 반폭을 똑같은 배율로
+// 넓혀서 확인할 수 있게 한다. 배율이 같으므로 X/Y 비율(따라서 도메인의
+// "모양")은 항상 유지된다 — 한쪽만 넓어지는 일은 없다. 1배(기본)는
+// computeStyleMapDomain 그대로다.
+const STYLE_MAP_ZOOM_OPTIONS = [1, 1.5, 2, 3] as const;
+const STYLE_MAP_DEFAULT_ZOOM = STYLE_MAP_ZOOM_OPTIONS[0];
+
 function clamp(v: number, [min, max]: [number, number]): number {
   return Math.min(max, Math.max(min, v));
 }
@@ -176,6 +184,12 @@ export default function RecordsClient({
   const tierGameType = (searchParams.get("type") as GameTypeFilter | null) ?? "all";
   const tierQuarterParam = searchParams.get("q");
   const styleMapGameType = (searchParams.get("styleType") as GameTypeFilter | null) ?? "all";
+  const styleZoomParam = Number(searchParams.get("styleZoom"));
+  const styleZoom = STYLE_MAP_ZOOM_OPTIONS.includes(
+    styleZoomParam as (typeof STYLE_MAP_ZOOM_OPTIONS)[number]
+  )
+    ? (styleZoomParam as (typeof STYLE_MAP_ZOOM_OPTIONS)[number])
+    : STYLE_MAP_DEFAULT_ZOOM;
 
   // 분기 티어는 항상 원본 games 전체를 넘긴다 — 종목 탭 4개를 한 번에
   // 계산해두고 탭 전환은 계산된 맵에서 골라 쓰기만 한다.
@@ -213,6 +227,8 @@ export default function RecordsClient({
   const setTierQuarter = (v: string) => set({ q: v });
   const setStyleMapGameType = (v: GameTypeFilter) =>
     set({ styleType: v === "all" ? null : v });
+  const setStyleZoom = (v: (typeof STYLE_MAP_ZOOM_OPTIONS)[number]) =>
+    set({ styleZoom: v === STYLE_MAP_DEFAULT_ZOOM ? null : String(v) });
 
   const tierRows = effectiveTierQuarter
     ? tierQuartersForType.get(effectiveTierQuarter) ?? []
@@ -241,15 +257,32 @@ export default function RecordsClient({
     () => styleMapByGameType.get(styleMapGameType) ?? [],
     [styleMapByGameType, styleMapGameType]
   );
-  const styleMapDomain: StyleMapDomain = useMemo(
+  const baseStyleMapDomain: StyleMapDomain = useMemo(
     () => computeStyleMapDomain(rawStyleMapPoints),
     [rawStyleMapPoints]
   );
+  // v2.29 (§40) — 줌은 두 축의 반폭에 똑같은 배율을 곱해서 만든다(비율 유지,
+  // 위 STYLE_MAP_ZOOM_OPTIONS 주석 참고). σ_null(xSigma/ySigma)은 화면에
+  // "보이는 범위"가 아니라 데이터 자체의 성질이라 줌에 영향받지 않는다 —
+  // ±1σ/±2σ 기준선은 배율과 무관하게 항상 같은 자리에 그려진다.
+  const styleMapDomain: StyleMapDomain = useMemo(() => {
+    if (styleZoom === 1) return baseStyleMapDomain;
+    const xHalfWidth = baseStyleMapDomain.xHalfWidth * styleZoom;
+    const yHalfWidth = baseStyleMapDomain.yHalfWidth * styleZoom;
+    return {
+      ...baseStyleMapDomain,
+      xHalfWidth,
+      yHalfWidth,
+      xDomain: [STYLE_MAP_X_CENTER - xHalfWidth, STYLE_MAP_X_CENTER + xHalfWidth],
+      yDomain: [STYLE_MAP_Y_CENTER - yHalfWidth, STYLE_MAP_Y_CENTER + yHalfWidth],
+    };
+  }, [baseStyleMapDomain, styleZoom]);
   const styleMapPoints: StyleMapPlotPoint[] = rawStyleMapPoints.map((p) => {
     const x = clamp(p.attack, styleMapDomain.xDomain);
     const y = clamp(p.defense, styleMapDomain.yDomain);
     return { ...p, x, y, clamped: x !== p.attack || y !== p.defense };
   });
+  const clampedCount = styleMapPoints.filter((p) => p.clamped).length;
 
   // v2.19 (배치 C, PRD §24.13) — 참가자별 고정 색. 예전엔 손익 부호로만
   // 초록/빨강 2색을 썼는데, 그건 Y축(손익)과 같은 정보를 색으로 한 번 더
@@ -373,6 +406,18 @@ export default function RecordsClient({
           ))}
         </div>
 
+        {/* v2.29 (§40) — 줌: 기본은 항상 지금까지와 같은 화면(1배)이고, 배율을
+            올리면 두 축의 최대값이 같은 비율로 늘어나 도메인 밖(점선 테두리)
+            에 찍혔던 사람의 실제 위치를 볼 수 있다. */}
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          <span className="text-xs text-content-muted">확대</span>
+          {STYLE_MAP_ZOOM_OPTIONS.map((z) => (
+            <FilterChip key={z} selected={styleZoom === z} onClick={() => setStyleZoom(z)}>
+              {z}배{z === STYLE_MAP_DEFAULT_ZOOM ? " (기본)" : ""}
+            </FilterChip>
+          ))}
+        </div>
+
         {styleMapPoints.length === 0 ? (
           <EmptyState
             title="이 종목으로는 최근 90일 내 기록이 없습니다."
@@ -385,7 +430,27 @@ export default function RecordsClient({
             }
           />
         ) : (
-          <StyleMapChart points={styleMapPoints} colorMap={participantColorMap} domain={styleMapDomain} />
+          <>
+            <StyleMapChart points={styleMapPoints} colorMap={participantColorMap} domain={styleMapDomain} />
+            {clampedCount > 0 && (
+              <div className="mt-2 flex items-center gap-2 flex-wrap text-xs text-amber-400">
+                <span>
+                  {clampedCount}명이 현재 배율({styleZoom}배)의 표시 범위 밖에 있습니다(점선 테두리).
+                </span>
+                {styleZoom !== STYLE_MAP_ZOOM_OPTIONS[STYLE_MAP_ZOOM_OPTIONS.length - 1] && (
+                  <Button
+                    variant="neutral"
+                    size="sm"
+                    onClick={() =>
+                      setStyleZoom(STYLE_MAP_ZOOM_OPTIONS[STYLE_MAP_ZOOM_OPTIONS.length - 1])
+                    }
+                  >
+                    최대로 확대
+                  </Button>
+                )}
+              </div>
+            )}
+          </>
         )}
 
         <p className="text-xs text-content-muted mt-4">
